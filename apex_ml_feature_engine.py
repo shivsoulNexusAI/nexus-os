@@ -1,4 +1,5 @@
-﻿import math
+# -*- coding: utf-8 -*-
+import math
 import numpy as np
 import MetaTrader5 as mt5
 from datetime import datetime, timezone
@@ -8,7 +9,7 @@ class ApexMicrostructureML:
     def extract_features(symbol: str):
         # 1. Microstructure Rates (M5)
         rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 30)
-        if rates is None or len(rates) < 25:
+        if rates is None or len(rates) < 20:
             return None
 
         # Garman-Klass Volatility
@@ -21,66 +22,70 @@ class ApexMicrostructureML:
             gk_elements.append(term1 - term2)
         gk_vol = math.sqrt(sum(gk_elements) / len(gk_elements)) if gk_elements else 0.001
 
-        # 2. Aldemon Liquidity Penetration
+        # 2. Aldemon Liquidity Penetration & High-Low Wick Dynamics
         recent_high = max(r['high'] for r in rates[-20:-2])
         recent_low = min(r['low'] for r in rates[-20:-2])
         curr = rates[-1]
         prev = rates[-2]
         atr = sum(r['high'] - r['low'] for r in rates[-14:]) / 14.0
+        if atr <= 0:
+            atr = curr['close'] * 0.001
 
         sweep_depth_pts = 0.0
         bias = "NEUTRAL"
+
+        # Check for sweeps
         if prev['low'] < recent_low and curr['close'] > recent_low:
             bias = "BULLISH_SWEEP"
-            sweep_depth_pts = (recent_low - prev['low']) / (atr if atr > 0 else 1.0)
+            sweep_depth_pts = (recent_low - prev['low']) / atr
         elif prev['high'] > recent_high and curr['close'] < recent_high:
             bias = "BEARISH_SWEEP"
-            sweep_depth_pts = (prev['high'] - recent_high) / (atr if atr > 0 else 1.0)
+            sweep_depth_pts = (prev['high'] - recent_high) / atr
+        else:
+            # Momentum Micro-Bias (M1/M5 close slope)
+            if curr['close'] > rates[-3]['close']:
+                bias = "MOMENTUM_LONG"
+            elif curr['close'] < rates[-3]['close']:
+                bias = "MOMENTUM_SHORT"
 
-        # 3. High-Frequency Tick-Delta Flow
-        ticks = mt5.copy_ticks_from(symbol, datetime.now(timezone.utc), 150, mt5.COPY_TICKS_ALL)
+        # 3. Robust Tick Flow & Order Flow Imbalance (OFI)
+        # Fetch latest 150 ticks using 0 offset (backwards from current live tick)
+        ticks = mt5.copy_ticks_from(symbol, 0, 150, mt5.COPY_TICKS_ALL)
         ofi_delta = 0.0
         spread_ratio = 1.0
-        if ticks is not None and len(ticks) >= 30:
-            bid_vol = sum(t.volume if t.volume > 0 else 1.0 for t in ticks if t.flags & mt5.TICK_FLAG_SELL)
-            ask_vol = sum(t.volume if t.volume > 0 else 1.0 for t in ticks if t.flags & mt5.TICK_FLAG_BUY)
-            total_v = bid_vol + ask_vol
-            ofi_delta = (ask_vol - bid_vol) / total_v if total_v > 0 else 0.0
-            spreads = [t.ask - t.bid for t in ticks]
-            med_sp = np.median(spreads)
-            curr_sp = ticks[-1].ask - ticks[-1].bid
+
+        if ticks is not None and len(ticks) >= 15:
+            # Measure directional tick velocity
+            mid_prices = (ticks['bid'] + ticks['ask']) / 2.0
+            price_deltas = np.diff(mid_prices)
+            up_moves = np.sum(price_deltas[price_deltas > 0])
+            down_moves = np.abs(np.sum(price_deltas[price_deltas < 0]))
+            tot_moves = up_moves + down_moves
+            
+            if tot_moves > 0:
+                ofi_delta = float((up_moves - down_moves) / tot_moves)
+            else:
+                ofi_delta = 0.0
+
+            # Spread ratio to detect institutional compression/expansion
+            spreads = ticks['ask'] - ticks['bid']
+            med_sp = float(np.median(spreads))
+            curr_sp = float(spreads[-1])
             spread_ratio = curr_sp / med_sp if med_sp > 0 else 1.0
 
         # Feature Vector Formulation
-        # [GK_Vol, OFI_Delta, Sweep_Depth, Spread_Ratio, ATR]
         features = np.array([gk_vol, ofi_delta, sweep_depth_pts, spread_ratio, atr], dtype=np.float32)
 
-        # Empirical Logistic / Microstructure Edge Scoring
-        # Intercept + Weights derived from institutional order flow calibration
-        z = -0.20 + (1.85 * sweep_depth_pts) + (1.20 * abs(ofi_delta)) - (0.85 * max(0, spread_ratio - 1.0))
-        empirical_p = 1.0 / (1.0 + math.exp(-z))
-        
-        # Dampen if OFI opposes the structural sweep
-        if bias == "BULLISH_SWEEP" and ofi_delta < -0.20:
-            empirical_p *= 0.85
-        elif bias == "BEARISH_SWEEP" and ofi_delta > 0.20:
-            empirical_p *= 0.85
+        # Calibrated Probability Curve
+        # Base starts at 50% fair-value odds
+        z = 0.0 + (1.65 * sweep_depth_pts) + (1.45 * ofi_delta if "LONG" in bias or "BULLISH" in bias else -1.45 * ofi_delta) - (0.50 * max(0.0, spread_ratio - 1.0))
+        prob = 1.0 / (1.0 + math.exp(-z))
 
         return {
             "bias": bias,
-            "probability": round(min(0.92, max(0.40, empirical_p)), 4),
+            "probability": round(prob, 4),
             "features": features,
-            "atr": atr,
-            "spread_ratio": spread_ratio,
-            "ofi": round(ofi_delta, 3)
+            "atr": float(atr),
+            "spread_ratio": round(spread_ratio, 2),
+            "ofi": round(ofi_delta, 2)
         }
-
-if __name__ == "__main__":
-    import MetaTrader5 as mt5
-    if mt5.initialize(path=r"C:\Program Files\MetaTrader 5\terminal64.exe", portable=True):
-        print("⚡ APEX ML FEATURE EXTRACTION TEST")
-        for sym in ["BTCUSD", "ETHUSD", "XAUUSD", "EURUSD", "USDJPY"]:
-            res = ApexMicrostructureML.extract_features(sym)
-            if res:
-                print(f"[{sym:<7}] Bias: {res['bias']:<14} | P(Win): {res['probability']*100:>5.1f}% | OFI: {res['ofi']:>+5.2f} | SpreadRatio: {res['spread_ratio']:.2f}x")
-        mt5.shutdown()

@@ -1,4 +1,4 @@
-﻿import time
+import time
 import math
 import logging
 from datetime import datetime, timezone
@@ -8,8 +8,8 @@ from apex_ml_feature_engine import ApexMicrostructureML
 # ==============================================================================
 # INSTITUTIONAL SPECIFICATION & PARAMETERS
 # ==============================================================================
-ACCOUNT_LOGIN    = 278025377
-ACCOUNT_SERVER   = "Exness-MT5Trial5"
+ACCOUNT_LOGIN = 278029146
+ACCOUNT_SERVER = "Exness-MT5Trial5"
 ACCOUNT_PASSWORD = "H@ngkook3695"
 MT5_PATH         = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
@@ -148,7 +148,7 @@ def execute_apex_ml_order(symbol: str, bias: str, p_hat: float, atr: float, equi
     lot = calculate_ml_half_kelly_lot(symbol, p_hat, sl_pts, equity)
 
     if lot <= 0:
-        log.info(f"⛔ Sizing Veto: Kelly lot resolved to 0 for {symbol} (p_hat: {p_hat:.2f})")
+        log.info(f"? Sizing Veto: Kelly lot resolved to 0 for {symbol} (p_hat: {p_hat:.2f})")
         return
 
     sl = entry_price - (sl_pts * info.point) if is_buy else entry_price + (sl_pts * info.point)
