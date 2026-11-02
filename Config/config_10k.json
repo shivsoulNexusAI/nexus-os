@@ -1,0 +1,12 @@
+{
+  "bot_token": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",,
+  "authorized_uid": 5279761713,
+  "mt5_account": 278007825,
+  "mt5_server": "Exness-MT5Trial5",
+  "target_equity": 10000.00,
+  "risk_per_trade_pct": 0.01,
+  "confluence_threshold": 85.0,
+  "shadow_winrate_threshold": 90.0,
+  "max_concurrent_slots": 2,
+  "max_daily_drawdown_pct": 0.04
+}

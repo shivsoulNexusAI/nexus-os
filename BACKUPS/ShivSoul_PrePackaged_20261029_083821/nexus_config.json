@@ -1,0 +1,16 @@
+{
+    "account": {
+        "login": 278020233,
+        "password": "H@ngkook3695",
+        "server": "Exness-MT5Trial5"
+    },
+    "risk": {
+        "max_drawdown_pct": 0.05,
+        "emergency_floor_pct": 0.10,
+        "single_trade_risk_pct": 0.01,
+        "max_open_positions": 5
+    },
+    "telemetry": {
+        "heartbeat_port": 8088
+    }
+}

@@ -1,0 +1,191 @@
+{
+  "date": "2026-10-22",
+  "total_realized_pnl": 466.26,
+  "closed_deals": 30,
+  "wins": 23,
+  "losses": 7,
+  "win_rate": 76.7,
+  "deals": [
+    {
+      "ticket": 2166801750,
+      "symbol": "XAUUSD",
+      "profit": -99.42,
+      "time": 1792647877
+    },
+    {
+      "ticket": 2168757918,
+      "symbol": "XAUUSD",
+      "profit": 183.74,
+      "time": 1792668109
+    },
+    {
+      "ticket": 2169995052,
+      "symbol": "XAUUSD",
+      "profit": 0.07,
+      "time": 1792676137
+    },
+    {
+      "ticket": 2170024600,
+      "symbol": "BTCUSD",
+      "profit": 0.04,
+      "time": 1792676203
+    },
+    {
+      "ticket": 2170174275,
+      "symbol": "BTCUSD",
+      "profit": -47.65,
+      "time": 1792676802
+    },
+    {
+      "ticket": 2170228385,
+      "symbol": "BTCUSD",
+      "profit": -106.63,
+      "time": 1792677055
+    },
+    {
+      "ticket": 2171423285,
+      "symbol": "GBPUSD",
+      "profit": 236.22,
+      "time": 1792685608
+    },
+    {
+      "ticket": 2171496338,
+      "symbol": "XAUUSD",
+      "profit": 49.46,
+      "time": 1792686306
+    },
+    {
+      "ticket": 2171496350,
+      "symbol": "XAUUSD",
+      "profit": 45.1,
+      "time": 1792686306
+    },
+    {
+      "ticket": 2171496363,
+      "symbol": "XAUUSD",
+      "profit": 46.73,
+      "time": 1792686306
+    },
+    {
+      "ticket": 2171496377,
+      "symbol": "USDJPY",
+      "profit": 68.14,
+      "time": 1792686306
+    },
+    {
+      "ticket": 2171496391,
+      "symbol": "USDJPY",
+      "profit": 5.31,
+      "time": 1792686306
+    },
+    {
+      "ticket": 2171496415,
+      "symbol": "USDJPY",
+      "profit": 5.62,
+      "time": 1792686307
+    },
+    {
+      "ticket": 2171496448,
+      "symbol": "USDJPY",
+      "profit": 13.75,
+      "time": 1792686307
+    },
+    {
+      "ticket": 2171496486,
+      "symbol": "USDJPY",
+      "profit": 7.38,
+      "time": 1792686307
+    },
+    {
+      "ticket": 2171496517,
+      "symbol": "BTCUSD",
+      "profit": 17.7,
+      "time": 1792686307
+    },
+    {
+      "ticket": 2171496535,
+      "symbol": "BTCUSD",
+      "profit": 6.63,
+      "time": 1792686308
+    },
+    {
+      "ticket": 2171496553,
+      "symbol": "BTCUSD",
+      "profit": 9.53,
+      "time": 1792686308
+    },
+    {
+      "ticket": 2171496565,
+      "symbol": "BTCUSD",
+      "profit": 38.47,
+      "time": 1792686309
+    },
+    {
+      "ticket": 2171496570,
+      "symbol": "USDJPY",
+      "profit": 4.79,
+      "time": 1792686309
+    },
+    {
+      "ticket": 2171496588,
+      "symbol": "BTCUSD",
+      "profit": -29.72,
+      "time": 1792686309
+    },
+    {
+      "ticket": 2171612508,
+      "symbol": "BTCUSD",
+      "profit": 242.39,
+      "time": 1792687631
+    },
+    {
+      "ticket": 2171900960,
+      "symbol": "XAUUSD",
+      "profit": -105.07,
+      "time": 1792691127
+    },
+    {
+      "ticket": 2172003142,
+      "symbol": "USDJPY",
+      "profit": 10.96,
+      "time": 1792692665
+    },
+    {
+      "ticket": 2172277661,
+      "symbol": "EURUSD",
+      "profit": -105.84,
+      "time": 1792697075
+    },
+    {
+      "ticket": 2172415831,
+      "symbol": "USDJPY",
+      "profit": 11.15,
+      "time": 1792699212
+    },
+    {
+      "ticket": 2172454452,
+      "symbol": "BTCUSD",
+      "profit": 0.09,
+      "time": 1792700146
+    },
+    {
+      "ticket": 2172501764,
+      "symbol": "GBPUSD",
+      "profit": 31.3,
+      "time": 1792701821
+    },
+    {
+      "ticket": 2172519676,
+      "symbol": "GBPUSD",
+      "profit": -106.88,
+      "time": 1792702524
+    },
+    {
+      "ticket": 2172520749,
+      "symbol": "EURUSD",
+      "profit": 32.9,
+      "time": 1792702578
+    }
+  ],
+  "archived_at_utc": "2026-10-23T17:40:54.551749+00:00"
+}

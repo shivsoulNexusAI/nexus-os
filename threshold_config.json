@@ -1,0 +1,24 @@
+﻿{
+  "sectors": {
+    "metals": {
+      "enabled": true,
+      "assets": {
+        "XAUUSD": { "min_edge": 75, "risk_percent": 0.75, "tp_mult": 2.2 }
+      }
+    },
+    "forex": {
+      "enabled": true,
+      "assets": {
+        "GBPUSD": { "min_edge": 75, "risk_percent": 0.75, "tp_mult": 1.8 },
+        "USDJPY": { "min_edge": 75, "risk_percent": 0.50, "tp_mult": 1.6 },
+        "EURUSD": { "min_edge": 82, "risk_percent": 0.25, "tp_mult": 1.8 }
+      }
+    },
+    "crypto": {
+      "enabled": true,
+      "assets": {
+        "BTCUSD": { "min_edge": 78, "risk_percent": 0.50, "tp_mult": 2.2 }
+      }
+    }
+  }
+}

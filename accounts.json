@@ -1,0 +1,11 @@
+﻿{
+    "active_alias": "main",
+    "accounts": {
+        "main": {
+            "name": "Exness Main (.5K)",
+            "login": 278007825,
+            "password": "H@ngkook3695",
+            "server": "Exness-MT5Trial5"
+        }
+    }
+}

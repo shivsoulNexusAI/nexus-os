@@ -1,0 +1,79 @@
+{
+  "balance": 10000.0,
+  "equity": 10000.0,
+  "positions": {
+    "SHADOW-51162A2A": {
+      "symbol": "BTCUSD",
+      "direction": "SELL",
+      "edge": 86,
+      "entry_time": "2026-10-23T02:50:19.767069+00:00",
+      "entry_price": 81797.18,
+      "sl": 81948.62,
+      "tp": 81464.01199999999,
+      "sl_dist": 151.44000000000233,
+      "dollar_risk": 100.0,
+      "ml_regime": "CLEAN_TREND",
+      "be_active": false
+    },
+    "SHADOW-3D9CC8A3": {
+      "symbol": "XAUUSD",
+      "direction": "SELL",
+      "edge": 87,
+      "entry_time": "2026-10-23T02:55:50.234603+00:00",
+      "entry_price": 4020.723,
+      "sl": 4028.193,
+      "tp": 4004.122599999999,
+      "sl_dist": 7.522000000000389,
+      "dollar_risk": 100.0,
+      "ml_regime": "CLEAN_TREND",
+      "be_active": false
+    },
+    "SHADOW-5C7DDE35": {
+      "symbol": "GBPUSD",
+      "direction": "BUY",
+      "edge": 83,
+      "entry_time": "2026-10-23T03:00:20.669109+00:00",
+      "entry_price": 1.33935,
+      "sl": 1.339011,
+      "tp": 1.3398718000000003,
+      "sl_dist": 0.00026900000000007473,
+      "dollar_risk": 75.0,
+      "ml_regime": "RANGE_ACCUMULATION",
+      "be_active": false
+    },
+    "SHADOW-BBDD4271": {
+      "symbol": "USDJPY",
+      "direction": "SELL",
+      "edge": 84,
+      "entry_time": "2026-10-23T03:00:20.686041+00:00",
+      "entry_price": 157.042,
+      "sl": 157.042,
+      "tp": 156.77161999999996,
+      "sl_dist": 0.12290000000001555,
+      "dollar_risk": 100.0,
+      "ml_regime": "CLEAN_TREND",
+      "be_active": true
+    },
+    "SHADOW-3F2DB77A": {
+      "symbol": "EURUSD",
+      "direction": "SELL",
+      "edge": 85,
+      "entry_time": "2026-10-23T03:09:51.383513+00:00",
+      "entry_price": 1.12146,
+      "sl": 1.121653,
+      "tp": 1.1210353999999996,
+      "sl_dist": 0.00019300000000010975,
+      "dollar_risk": 75.0,
+      "ml_regime": "RANGE_ACCUMULATION",
+      "be_active": false
+    }
+  },
+  "suppressed_count": 2519,
+  "last_veto": {
+    "symbol": "XAUUSD",
+    "regime": "ACCUMULATION",
+    "score": "60.0%",
+    "reason": "VETO: Edge score 60.0% below institutional floor (80.0%)",
+    "timestamp": "2026-10-27T20:38:19.637690+00:00"
+  }
+}
