@@ -482,14 +482,26 @@ def render_leaderboard_card(scans, autopilot_status=None):
     open_sym_map = {p.symbol: p for p in all_positions}
     tot_pnl = sum([p.profit for p in all_positions])
     active_count = len(all_positions)
+    pnl_sign = "+" if tot_pnl >= 0 else ""
 
     lines = []
-    lines.append("🏛️ <b>NEXUS HEDGE DESK | 5-ASSET MATRIX</b>")
-    pnl_sign = "+" if tot_pnl >= 0 else ""
-    lines.append(f"💼 <b>NAV:</b> ${eq:,.2f} | <b>Float PnL:</b> {pnl_sign}${tot_pnl:,.2f} ({active_count}/5 Active)")
-    lines.append(f"🛡️ <b>Margin Free:</b> ${mf:,.2f} | <b>Balance:</b> ${bal:,.2f}")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("🏛️ <b>NEXUS HEDGE DESK | INSTITUTIONAL MATRIX</b>")
+    lines.append("────────────────────────────────")
+    lines.append(f"<code>NAV:    ${eq:,.2f}  | Float: {pnl_sign}${tot_pnl:,.2f}</code>")
+    lines.append(f"<code>Margin: ${mf:,.2f}  | Active: {active_count}/5 Active</code>")
+    lines.append("────────────────────────────────")
 
+    # Active in-market positions header
+    if open_sym_map:
+        lines.append("<b>⚡ LIVE MARKET EXECUTIONS (LOCKED)</b>")
+        for s_sym, pos in open_sym_map.items():
+            side_str = "BUY" if pos.type == 0 else "SELL"
+            pnl_s = "+" if pos.profit >= 0 else ""
+            lines.append(f"<u><b>{s_sym}</b> • {side_str} {pos.volume:.2f}L | Float: {pnl_s}${pos.profit:,.2f} | Open: {pos.price_open:,.2f}</u>")
+        lines.append("────────────────────────────────")
+
+    # Opportunity Matrix
+    lines.append("<b>📡 SCANNER FLEET | 60S CYCLE</b>")
     rank = 1
     top_cand = None
     for item in (scans or []):
@@ -499,22 +511,18 @@ def render_leaderboard_card(scans, autopilot_status=None):
         rr = item.get("rr", 2.33)
 
         if s in open_sym_map:
-            pos = open_sym_map[s]
-            side_str = "BUY" if pos.type == 0 else "SELL"
-            pos_pnl_sign = "+" if pos.profit >= 0 else ""
-            lines.append(f"<u>#{rank}: {s} | 🛡️ <b>ACTIVE POSITION ({side_str} {pos.volume:.2f}L)</b></u>")
-            lines.append(f"   ↳ <i>Float: {pos_pnl_sign}${pos.profit:,.2f} | Open: ${pos.price_open:,.2f}</i>")
+            lines.append(f"<code>#{rank} {s:<7} [LOCKED] IN-POSITION</code>")
         else:
             icon = "🟢" if direction == "BUY" else ("🔴" if direction == "SELL" else "⚪")
-            status_tag = f"(✅ CLEARED {edge}%)" if edge >= 75 else f"({edge}%)"
-            lines.append(f"#{rank}: {s} | {icon} {direction} {status_tag} | RR: {rr:.2f}R")
+            status_tag = f"CLEARED {edge}%" if edge >= 75 else f"{edge}%"
+            lines.append(f"<code>#{rank} {s:<7} {icon} {direction:<4} ({status_tag}) RR:{rr:.2f}R</code>")
             if top_cand is None and direction != "NEUTRAL":
                 top_cand = item
-
         rank += 1
 
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("────────────────────────────────")
 
+    # Top Execution Target Block
     if top_cand:
         c_sym = top_cand.get("symbol", "N/A")
         c_dir = top_cand.get("direction", "BUY")
@@ -523,29 +531,27 @@ def render_leaderboard_card(scans, autopilot_status=None):
         c_sl = top_cand.get("sl", 0.0)
         c_tp = top_cand.get("tp", 0.0)
         c_lots = top_cand.get("calculated_lots", 0.01)
-
-        lines.append(f"🎯 <b>TOP OPPORTUNITY:</b> {c_sym} ({c_dir} @ {c_edge}%)")
-        lines.append(f" • Entry: ${c_entry:,.3f}")
-        lines.append(f" • SL: ${c_sl:,.3f} | TP: ${c_tp:,.3f}")
-        lines.append(f" • Sizing: {c_lots:.2f} Lots (1% Risk)")
+        lines.append(f"🎯 <b>ALPHA TRIGGER: {c_sym} ({c_dir} @ {c_edge}%)</b>")
+        lines.append(f" • <b>Order Sizing:</b> <code>{c_lots:.2f} Lots (1% Risk Model)</code>")
+        lines.append(f" • <b>Entry:</b> <code>${c_entry:,.3f}</code>")
+        lines.append(f" • <b>SL:</b> <code>${c_sl:,.3f}</code> | <b>TP:</b> <code>${c_tp:,.3f}</code>")
     else:
-        lines.append("🎯 <b>TOP OPPORTUNITY:</b> Matrix Neutral (Awaiting Edge Expansion)")
+        lines.append("🎯 <b>ALPHA TRIGGER:</b> <code>Matrix Balanced | Awaiting Edge Expansion</code>")
 
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append("────────────────────────────────")
 
+    # Autopilot Gate Status
     if autopilot_status:
         lines.append(f"<i>{autopilot_status}</i>")
     else:
-        if top_cand and top_cand.get("symbol") in open_sym_map:
-            lines.append(f"🛡️ <b>POSITION LOCK:</b> Active trade already running on {top_cand.get('symbol')}. Lock Engaged.")
-        elif all_positions:
-            running = list(open_sym_map.keys())
-            lines.append(f"🛡️ <b>POSITION LOCK:</b> {len(running)} Positions running ({running}). Target Clear.")
+        locked_names = list(open_sym_map.keys())
+        if locked_names:
+            locked_str = ", ".join(locked_names)
+            lines.append(f"🛡️ <b>SAFETY GATE:</b> Locked on [{locked_str}] | Scanner Ready.")
         else:
-            lines.append("🛡️ <b>POSITION LOCK:</b> Zero active positions. Clear to fire.")
+            lines.append("🛡️ <b>SAFETY GATE:</b> 0 Active Positions | Autonomous Fire Armed.")
 
-    lines.append("")
-    lines.append(f"⏱️ Last Scanned: {t_now}")
+    lines.append(f"⏱️ <i>Updated: {t_now} | 60s Cadence</i>")
     return chr(10).join(lines), get_scan_keyboard()
 
 
@@ -572,15 +578,11 @@ def build_sentinel_alert(ticket, sym, direction, edge, lots, sl, tp):
 
 
 def get_scan_keyboard():
-
-    return InlineKeyboardMarkup([
-
-        [InlineKeyboardButton("🔄 Run Scan Again", callback_data="RUN_SCAN_NOW")],
-
-        [InlineKeyboardButton("💼ј Accounts Switchboard", callback_data="NAV_SWITCHBOARD")]
-
-    ])
-
+    keyboard = [
+        [InlineKeyboardButton("🔄 Run Scan Again", callback_data="rescan")],
+        [InlineKeyboardButton("💼 Accounts Switchboard", callback_data="accounts")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 
 def render_switchboard_card():
