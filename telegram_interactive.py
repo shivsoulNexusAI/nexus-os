@@ -486,22 +486,22 @@ def render_leaderboard_card(scans, autopilot_status=None):
 
     lines = []
     lines.append("🏛️ <b>NEXUS HEDGE DESK | INSTITUTIONAL MATRIX</b>")
-    lines.append("────────────────────────────────")
-    lines.append(f"<code>NAV:    ${eq:,.2f}  | Float: {pnl_sign}${tot_pnl:,.2f}</code>")
-    lines.append(f"<code>Margin: ${mf:,.2f}  | Active: {active_count}/5 Active</code>")
-    lines.append("────────────────────────────────")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+    lines.append(f"<code>NAV:     ${eq:,.2f}  |  Float: {pnl_sign}${tot_pnl:,.2f}</code>")
+    lines.append(f"<code>Free Mgn: ${mf:,.2f}  |  Fleet: {active_count}/5 Locked</code>")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-    # Active in-market positions header
+    # 1. LIVE ACTIVE POSITIONS BLOCK
     if open_sym_map:
         lines.append("<b>⚡ LIVE MARKET EXECUTIONS (LOCKED)</b>")
         for s_sym, pos in open_sym_map.items():
             side_str = "BUY" if pos.type == 0 else "SELL"
             pnl_s = "+" if pos.profit >= 0 else ""
             lines.append(f"<u><b>{s_sym}</b> • {side_str} {pos.volume:.2f}L | Float: {pnl_s}${pos.profit:,.2f} | Open: {pos.price_open:,.2f}</u>")
-        lines.append("────────────────────────────────")
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-    # Opportunity Matrix
-    lines.append("<b>📡 SCANNER FLEET | 60S CYCLE</b>")
+    # 2. SCANNER FLEET (ALL 5 ASSETS)
+    lines.append("<b>📡 SCANNER FLEET | 60S CADENCE</b>")
     rank = 1
     top_cand = None
     for item in (scans or []):
@@ -511,7 +511,7 @@ def render_leaderboard_card(scans, autopilot_status=None):
         rr = item.get("rr", 2.33)
 
         if s in open_sym_map:
-            lines.append(f"<code>#{rank} {s:<7} [LOCKED] IN-POSITION</code>")
+            lines.append(f"<code>#{rank} {s:<7} 🔒 [LOCKED / IN-POSITION]</code>")
         else:
             icon = "🟢" if direction == "BUY" else ("🔴" if direction == "SELL" else "⚪")
             status_tag = f"CLEARED {edge}%" if edge >= 75 else f"{edge}%"
@@ -520,9 +520,9 @@ def render_leaderboard_card(scans, autopilot_status=None):
                 top_cand = item
         rank += 1
 
-    lines.append("────────────────────────────────")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-    # Top Execution Target Block
+    # 3. ALPHA TRIGGER BLOCK
     if top_cand:
         c_sym = top_cand.get("symbol", "N/A")
         c_dir = top_cand.get("direction", "BUY")
@@ -532,24 +532,24 @@ def render_leaderboard_card(scans, autopilot_status=None):
         c_tp = top_cand.get("tp", 0.0)
         c_lots = top_cand.get("calculated_lots", 0.01)
         lines.append(f"🎯 <b>ALPHA TRIGGER: {c_sym} ({c_dir} @ {c_edge}%)</b>")
-        lines.append(f" • <b>Order Sizing:</b> <code>{c_lots:.2f} Lots (1% Risk Model)</code>")
+        lines.append(f" • <b>Order Sizing:</b> <code>{c_lots:.2f} Lots (1% Dynamic Risk)</code>")
         lines.append(f" • <b>Entry:</b> <code>${c_entry:,.3f}</code>")
-        lines.append(f" • <b>SL:</b> <code>${c_sl:,.3f}</code> | <b>TP:</b> <code>${c_tp:,.3f}</code>")
+        lines.append(f" • <b>SL:</b> <code>${c_sl:,.3f}</code>  |  <b>TP:</b> <code>${c_tp:,.3f}</code>")
     else:
         lines.append("🎯 <b>ALPHA TRIGGER:</b> <code>Matrix Balanced | Awaiting Edge Expansion</code>")
 
-    lines.append("────────────────────────────────")
+    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-    # Autopilot Gate Status
+    # 4. SAFETY GATE
     if autopilot_status:
         lines.append(f"<i>{autopilot_status}</i>")
     else:
         locked_names = list(open_sym_map.keys())
         if locked_names:
             locked_str = ", ".join(locked_names)
-            lines.append(f"🛡️ <b>SAFETY GATE:</b> Locked on [{locked_str}] | Scanner Ready.")
+            lines.append(f"🛡️ <b>SAFETY GATE:</b> Active Locks on [{locked_str}] | Scanner Ready.")
         else:
-            lines.append("🛡️ <b>SAFETY GATE:</b> 0 Active Positions | Autonomous Fire Armed.")
+            lines.append("🛡️ <b>SAFETY GATE:</b> 0 Active Locks | Autonomous Execution Armed.")
 
     lines.append(f"⏱️ <i>Updated: {t_now} | 60s Cadence</i>")
     return chr(10).join(lines), get_scan_keyboard()
