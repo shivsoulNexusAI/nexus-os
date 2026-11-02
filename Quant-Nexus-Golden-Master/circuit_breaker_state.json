@@ -1,9 +1,9 @@
 {
-    "high_water_mark": 1135.06,
-    "current_floor": 1078.31,
-    "base_floor": 950.0,
+    "high_water_mark": 0.0,
+    "current_floor": 0.0,
+    "base_floor": 0.0,
     "max_drawdown_pct": 0.05,
     "is_tripped": false,
     "tripped_timestamp": null,
-    "last_updated_utc": "2026-11-02T03:35:53.380138+00:00"
+    "last_updated_utc": "2026-11-02T03:45:33.940118+00:00"
 }
