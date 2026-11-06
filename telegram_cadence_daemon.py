@@ -175,32 +175,25 @@ def run_cadence_engine():
                 ]
             }
 
-            if pulse_message_id is None:
-                res = tg_post("sendMessage", {
-                    "chat_id": chat_id,
-                    "text": text_card,
-                    "parse_mode": "HTML",
-                    "reply_markup": keyboard
-                })
-                if res and res.get("ok"):
-                    pulse_message_id = res["result"]["message_id"]
-            else:
-                edit_res = tg_post("editMessageText", {
-                    "chat_id": chat_id,
-                    "message_id": pulse_message_id,
-                    "text": text_card,
-                    "parse_mode": "HTML",
-                    "reply_markup": keyboard
-                })
-                if not edit_res or not edit_res.get("ok"):
-                    res = tg_post("sendMessage", {
+            # Option A: True Dissolve Cycle (Delete previous card -> Post fresh matrix at bottom)
+            if pulse_message_id is not None:
+                try:
+                    tg_post("deleteMessage", {
                         "chat_id": chat_id,
-                        "text": text_card,
-                        "parse_mode": "HTML",
-                        "reply_markup": keyboard
+                        "message_id": pulse_message_id
                     })
-                    if res and res.get("ok"):
-                        pulse_message_id = res["result"]["message_id"]
+                except Exception as del_err:
+                    logging.warning(f"Dissolve delete skipped: {del_err}")
+                time.sleep(0.4)  # Visual dissolve interval before re-materializing
+
+            res = tg_post("sendMessage", {
+                "chat_id": chat_id,
+                "text": text_card,
+                "parse_mode": "HTML",
+                "reply_markup": keyboard
+            })
+            if res and res.get("ok"):
+                pulse_message_id = res["result"]["message_id"]
 
             frame_index += 1
 
