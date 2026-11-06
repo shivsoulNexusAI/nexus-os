@@ -1,4 +1,4 @@
-﻿import datetime
+import datetime
 import re
 
 with open('mss_matrix.py', 'r', encoding='utf-8') as f:

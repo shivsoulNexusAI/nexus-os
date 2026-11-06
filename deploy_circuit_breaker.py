@@ -1,4 +1,4 @@
-﻿import re
+import re
 
 with open('telegram_interactive.py', 'r', encoding='utf-8') as f:
     text = f.read()

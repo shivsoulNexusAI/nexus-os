@@ -1,4 +1,4 @@
-﻿path = r"C:\Quant-Nexus-Eng\telegram_interactive.py"
+path = r"C:\Quant-Nexus-Eng\telegram_interactive.py"
 
 with open(path, "rb") as f:
     content = f.read()

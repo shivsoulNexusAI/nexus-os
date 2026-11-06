@@ -1,4 +1,4 @@
-﻿"""
+"""
 NEXUS MICROSTRUCTURE ENGINE v2.1 (Production Robust)
 ====================================================================
 Subsystems:

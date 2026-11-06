@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import re
 
 path = r"C:\Quant-Nexus-Eng\telegram_interactive.py"

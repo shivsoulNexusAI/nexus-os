@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 import pandas as pd
 import MetaTrader5 as mt5
 from typing import Dict, List, Optional, Tuple

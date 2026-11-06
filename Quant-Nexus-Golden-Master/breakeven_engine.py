@@ -1,125 +1,160 @@
 ﻿import os
+import json
 import time
-import requests
+import math
 import MetaTrader5 as mt5
 
 LOGIN = 278017866
 PASSWORD = "H@ngkook3695"
 SERVER = "Exness-MT5Trial5"
-TERMINAL_PATH = r"C:\Program Files\MetaTrader 5\terminal64.exe"
 
-# Load credentials from .env
-env_path = r"C:\Quant-Nexus-Eng\Quant-Nexus-Golden-Master\.env"
-env_vars = {}
-if os.path.exists(env_path):
-    with open(env_path, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith("#") and "=" in line:
-                k, v = line.split("=", 1)
-                env_vars[k.strip()] = v.strip().strip('"').strip("'")
+STATE_PATH = r"C:\Quant-Nexus-Eng\Quant-Nexus-Golden-Master\breakeven_state.json"
 
-BOT_TOKEN = env_vars.get("TELEGRAM_BOT_TOKEN")
-CHAT_ID = env_vars.get("TELEGRAM_CHAT_ID")
+SPREAD_PAD_POINTS = {
+    "EURUSD": 15,
+    "GBPUSD": 20,
+    "USDJPY": 20,
+    "XAUUSD": 75,
+    "BTCUSD": 150
+}
 
-def send_telegram(msg: str):
-    if not BOT_TOKEN or not CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": msg, "parse_mode": "HTML"}
+scaled_tickets = set()
+
+def load_state():
+    global scaled_tickets
+    if os.path.exists(STATE_PATH):
+        try:
+            with open(STATE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                scaled_tickets = set(data.get("scaled_tickets", []))
+        except Exception:
+            pass
+
+def save_state():
     try:
-        requests.post(url, json=payload, timeout=5)
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"scaled_tickets": list(scaled_tickets)}, f, indent=2)
     except Exception:
         pass
 
-class BreakevenDefenseEngine:
-    def __init__(self, r_multiple_trigger: float = 1.0, be_buffer_pips: float = 1.0):
-        self.r_multiple_trigger = r_multiple_trigger
-        self.be_buffer_pips = be_buffer_pips
-        self.protected_tickets = set()
+def ensure_mt5():
+    if not mt5.terminal_info():
+        mt5.initialize(r"C:\Program Files\MetaTrader 5\terminal64.exe")
+        mt5.login(login=LOGIN, password=PASSWORD, server=SERVER)
 
-    def process_positions(self):
-        positions = mt5.positions_get()
-        if not positions:
-            return
+def get_filling_mode(symbol):
+    sym_info = mt5.symbol_info(symbol)
+    if not sym_info:
+        return mt5.ORDER_FILLING_FOK
+    modes = sym_info.filling_mode
+    if modes & 2:
+        return mt5.ORDER_FILLING_IOC
+    elif modes & 1:
+        return mt5.ORDER_FILLING_FOK
+    return mt5.ORDER_FILLING_RETURN
 
-        for p in positions:
-            if p.ticket in self.protected_tickets:
-                continue
+def process_active_positions():
+    load_state()
+    ensure_mt5()
+    positions = mt5.positions_get()
+    if not positions:
+        return
 
-            info = mt5.symbol_info(p.symbol)
-            if not info:
-                continue
+    for p in positions:
+        ticket = p.ticket
+        sym = p.symbol
+        is_buy = (p.type == mt5.ORDER_TYPE_BUY)
+        open_price = float(p.price_open)
+        mark = float(p.price_current)
+        sl = float(p.sl)
+        volume = float(p.volume)
 
-            pt = info.point
-            digits = info.digits
-            pip_size = pt * 10 if digits in [3, 5] else pt
-            buffer_dist = self.be_buffer_pips * pip_size
+        sym_info = mt5.symbol_info(sym)
+        if not sym_info:
+            continue
 
-            if p.sl == 0.0:
-                continue
+        digits = sym_info.digits
+        point = sym_info.point
+        pad_pts = SPREAD_PAD_POINTS.get(sym, 20)
+        spread_pad = pad_pts * point
 
-            is_buy = (p.type == mt5.ORDER_TYPE_BUY)
-            initial_risk_dist = abs(p.price_open - p.sl)
-            current_gain = (p.price_current - p.price_open) if is_buy else (p.price_open - p.price_current)
+        # Estimate initial risk unit R (distance from entry to original SL or 1.5 ATR pad)
+        if sl > 0 and abs(open_price - sl) > spread_pad:
+            initial_risk = abs(open_price - sl)
+        else:
+            initial_risk = 250 * point
 
-            # Trigger condition: profit >= 1.0R
-            if current_gain >= (initial_risk_dist * self.r_multiple_trigger):
-                new_sl = round(p.price_open + buffer_dist if is_buy else p.price_open - buffer_dist, digits)
+        # Compute continuous R-multiple gain
+        gain = (mark - open_price) if is_buy else (open_price - mark)
+        r_mult = gain / initial_risk if initial_risk > 0 else 0.0
 
-                # Check if current SL already equals or surpasses breakeven
-                if (is_buy and p.sl >= new_sl) or (not is_buy and p.sl <= new_sl):
-                    self.protected_tickets.add(p.ticket)
-                    continue
+        # === TIER 1: BREAKEVEN LOCK (+1.0R) ===
+        if r_mult >= 1.0:
+            target_be_sl = round(open_price + spread_pad if is_buy else open_price - spread_pad, digits)
+            needs_be_lock = False
+            if is_buy and (sl < target_be_sl or sl == 0.0):
+                needs_be_lock = True
+            elif not is_buy and (sl > target_be_sl or sl == 0.0):
+                needs_be_lock = True
 
-                # Broker stops_level safety check
-                min_stop_distance = max(info.trade_stops_level, 5) * pt
-                curr_price = p.price_current
-                if is_buy and (curr_price - new_sl) < min_stop_distance:
-                    continue  # Price too close to target SL, wait for safe buffer
-                elif not is_buy and (new_sl - curr_price) < min_stop_distance:
-                    continue
-
+            if needs_be_lock:
                 req = {
                     "action": mt5.TRADE_ACTION_SLTP,
-                    "position": p.ticket,
-                    "symbol": p.symbol,
-                    "sl": new_sl,
+                    "position": ticket,
+                    "symbol": sym,
+                    "sl": target_be_sl,
                     "tp": p.tp
                 }
                 res = mt5.order_send(req)
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    self.protected_tickets.add(p.ticket)
-                    side_str = "BUY" if is_buy else "SELL"
-                    msg = (
-                        f"🔒 <b>[BREAKEVEN ARMED - RISK-FREE RUNNER]</b>\n"
-                        f"• <b>Ticket</b>: #{p.ticket} ({p.symbol} {side_str})\n"
-                        f"• <b>Volume</b>: <code>{p.volume:.2f}L</code>\n"
-                        f"• <b>Open</b>  : <code>{p.price_open:.5f}</code>\n"
-                        f"• <b>New SL</b>: <code>{new_sl:.5f}</code> (+{self.be_buffer_pips} pip lock)\n"
-                        f"• <b>Float</b> : <b>+${p.profit:.2f} USD</b>\n"
-                        f"• <b>Status</b>: Zero downside exposure locked."
-                    )
-                    send_telegram(msg)
-                    print(f"[BREAKEVEN] Successfully locked Ticket #{p.ticket} on {p.symbol}")
-                else:
-                    err = res.comment if res else mt5.last_error()
-                    print(f"[BREAKEVEN] Modification rejected for #{p.ticket}: {err}")
+                    print(f"[BE-LOCK] Ticket #{ticket} ({sym}) @ +{r_mult:.2f}R -> SL locked to {target_be_sl}")
 
-def main():
-    if not mt5.initialize(path=TERMINAL_PATH) or not mt5.login(login=LOGIN, password=PASSWORD, server=SERVER):
-        print(f"MT5 Login Failed: {mt5.last_error()}")
-        return
+        # === TIER 2: 50% PARTIAL PROFIT HARVEST (+1.8R) ===
+        if r_mult >= 1.8 and ticket not in scaled_tickets:
+            step = sym_info.volume_step
+            min_lot = sym_info.volume_min
+            half_vol = round(math.floor((volume / 2.0) / step) * step, 2)
 
-    print("🟢 Breakeven Defense Engine Online. Polling active tickets...")
-    engine = BreakevenDefenseEngine(r_multiple_trigger=1.0, be_buffer_pips=1.0)
+            if half_vol >= min_lot and (volume - half_vol) >= min_lot:
+                close_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
+                close_price = sym_info.bid if is_buy else sym_info.ask
+                close_filling = get_filling_mode(sym)
 
-    while True:
-        try:
-            engine.process_positions()
-        except Exception as e:
-            print(f"Breakeven Loop Error: {e}")
-        time.sleep(5)
+                req = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "position": ticket,
+                    "symbol": sym,
+                    "volume": half_vol,
+                    "type": close_type,
+                    "price": close_price,
+                    "deviation": 25,
+                    "magic": 999101,
+                    "comment": "Nexus 1.8R Partial Scale",
+                    "type_filling": close_filling
+                }
+                res = mt5.order_send(req)
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    print(f"[PARTIAL-SCALE] Ticket #{ticket} ({sym}) closed {half_vol}L @ +{r_mult:.2f}R")
+                    scaled_tickets.add(ticket)
+                    save_state()
+
+                    # Trail runner SL to +0.8R
+                    runner_sl = round(open_price + (0.8 * initial_risk) if is_buy else open_price - (0.8 * initial_risk), digits)
+                    mod_req = {
+                        "action": mt5.TRADE_ACTION_SLTP,
+                        "position": ticket,
+                        "symbol": sym,
+                        "sl": runner_sl,
+                        "tp": p.tp
+                    }
+                    mt5.order_send(mod_req)
 
 if __name__ == "__main__":
-    main()
+    print("[NEXUS-DEFENSE] Breakeven & Trailing Engine armed and monitoring.")
+    while True:
+        try:
+            process_active_positions()
+        except Exception as e:
+            print(f"[!] Breakeven loop error: {e}")
+        time.sleep(3)
+

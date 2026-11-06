@@ -1,4 +1,4 @@
-﻿import os
+import os
 
 bridge_code = """# -*- coding: utf-8 -*-
 import time

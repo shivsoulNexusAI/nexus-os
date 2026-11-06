@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from mss_matrix import (
     analyze_higher_timeframe_context,
     audit_htf_order_block,

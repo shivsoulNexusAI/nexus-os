@@ -1,6 +1,6 @@
 from nexus_alpha_decay import evaluate_alpha_decay_cycle
 from nexus_profit_harvester import evaluate_and_harvest_position
-﻿"""
+"""
 NEXUS TRAILING RATCHET // AUTONOMOUS CHANDELIER ATR RUNNER ARMOR
 """
 import os
@@ -148,13 +148,13 @@ def run_ratchet_cycle():
                     locked_gain = (proposed_sl - open_price) if is_buy else (open_price - proposed_sl)
                     locked_pct = (locked_gain / open_price) * 100.0
                     send_silent_telegram(
-                        f"📈 <b>CHANDELIER RATCHET // SL ADVANCED</b>\n"
+                        f"рџ“€ <b>CHANDELIER RATCHET // SL ADVANCED</b>\n"
                         f"• <b>Ticket</b>: <code>#{ticket}</code> ({symbol})\n"
                         f"• <b>New Trailing SL</b>: <code>{proposed_sl:.{digits}f}</code>\n"
                         f"• <b>Guaranteed Profit</b>: <code>+{locked_pct:.2f}%</code>\n"
                         f"• <b>Trail Buffer</b>: 1.0x ATR ({atr:.{digits}f})"
                     )
-                    print(f"[{datetime.now().strftime('%H:%M:%S')}] 📈 Ratchet Advanced #{ticket} {symbol} SL -> {proposed_sl:.{digits}f}")
+                    print(f"[{datetime.now().strftime('%H:%M:%S')}] рџ“€ Ratchet Advanced #{ticket} {symbol} SL -> {proposed_sl:.{digits}f}")
 
 async def autonomous_trailing_ratchet():
     """Continuous background worker running every 5 seconds."""

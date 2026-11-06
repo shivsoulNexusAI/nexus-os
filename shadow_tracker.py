@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 SHIVSOUL QUANTITATIVE DESK - LIVE FORWARD SHADOW TRACKER
 Evaluates live market conditions, logs virtual trades, tracks real-time ticks,

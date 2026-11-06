@@ -1,9 +1,21 @@
-{
-  "circuit_breaker_latched": false,
-  "circuit_breaker_tripped": false,
-  "circuit_breaker_reason": null,
-  "execution_edge_threshold": 0.75,
-  "default_max_lot": 0.05,
-  "basket_take_profit": 15.0,
-  "max_global_positions": 4
+﻿{
+    "execution_edge_threshold":  0.75,
+    "default_max_lot":  0.05,
+    "consecutive_loss_cooldown_sec":  120,
+    "max_allowed_lots":  {
+                             "BTCUSD":  0.08,
+                             "EURUSD":  0.05,
+                             "GBPUSD":  0.03,
+                             "USDJPY":  0.05,
+                             "XAUUSD":  0.02
+                         },
+    "basket_take_profit":  25,
+    "prohibit_same_bar_reentry":  false,
+    "symbol_threshold_overrides":  {
+                                       "BTCUSD":  0.75,
+                                       "EURUSD":  0.74,
+                                       "GBPUSD":  0.75,
+                                       "USDJPY":  0.74,
+                                       "XAUUSD":  0.75
+                                   }
 }

@@ -1,4 +1,4 @@
-﻿import datetime
+import datetime
 import MetaTrader5 as mt5
 
 def compute_today_ledger_stats():

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import math
 import numpy as np
@@ -394,7 +394,7 @@ async def handle_recap_callback(update, context):
         pass
 
 def send_telegram_recap(period="DAILY") -> bool:
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "8883861115:AAFfjNsWgIVzJe2KW0FEvxcUwVFWcVk18I0").strip()
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw").strip()
     chat_id = os.getenv("TELEGRAM_CHAT_ID", "5279761713").strip()
     if not token or not chat_id:
         return False

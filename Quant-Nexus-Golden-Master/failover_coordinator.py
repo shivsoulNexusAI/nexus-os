@@ -1,4 +1,4 @@
-﻿"""
+"""
 Quant-Nexus Distributed Heartbeat & Failover Coordinator
 =======================================================
 Roles:

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 SHIVSOUL QUANTITATIVE DESK - MACRO NEWS CIRCUIT BREAKER
 Scrapes, parses, and caches High-Impact (Red-Folder) macroeconomic releases.

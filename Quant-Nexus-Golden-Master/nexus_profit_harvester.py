@@ -1,5 +1,5 @@
 from nexus_vol_regime_engine import evaluate_volatility_regime
-﻿"""
+"""
 NEXUS PROFIT HARVESTER // AUTONOMOUS ASYMMETRIC SCALE-OUT & RUNNER UNLEASHING
 """
 import os

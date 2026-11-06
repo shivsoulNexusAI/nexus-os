@@ -1,4 +1,4 @@
-﻿path = r"C:\Quant-Nexus-Eng\telegram_interactive.py"
+path = r"C:\Quant-Nexus-Eng\telegram_interactive.py"
 with open(path, "r", encoding="utf-8", errors="ignore") as f:
     lines = f.readlines()
 

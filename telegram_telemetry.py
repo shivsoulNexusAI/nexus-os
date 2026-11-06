@@ -1,95 +1,95 @@
 ﻿import json
-import os
-import threading
-import urllib.parse
+import logging
 import urllib.request
+from datetime import datetime, timezone
 
-CONFIG_FILE = "telegram_config.json"
+CONFIG_PATH = "C:\\Quant-Nexus-Prod\\core\\telegram_config.json"
 
-def load_config():
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            pass
-    return {"bot_token": "", "chat_id": "", "enabled": False}
-
-def save_config(bot_token: str, chat_id: str, enabled: bool = True):
-    config = {
-        "bot_token": bot_token.strip(),
-        "chat_id": str(chat_id).strip(),
-        "enabled": enabled
-    }
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(config, f, indent=4)
-    return config
-
-def _send_http_post(token, chat_id, message):
+def _load_config():
     try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {
-            "chat_id": chat_id,
-            "text": message,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True
-        }
-        data = json.dumps(payload).encode("utf-8")
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        logging.error(f"[!] Could not load telegram_config.json: {e}")
+        return None
+
+def send_raw_alert(html_text: str) -> bool:
+    cfg = _load_config()
+    if not cfg or not cfg.get("enabled", True):
+        return False
+    
+    bot_token = cfg.get("bot_token")
+    chat_id = cfg.get("chat_id")
+    if not bot_token or not chat_id:
+        return False
+
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": html_text,
+        "parse_mode": "HTML"
+    }
+    
+    try:
         req = urllib.request.Request(
             url,
-            data=data,
-            headers={"Content-Type": "application/json", "User-Agent": "Sentinel-Nexus/1.0"}
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
         )
-        with urllib.request.urlopen(req, timeout=5) as resp:
+        with urllib.request.urlopen(req, timeout=6) as resp:
             return resp.status == 200
     except Exception as e:
+        logging.error(f"[!] Telemetry send failed: {e}")
         return False
 
-def send_telegram_alert(message: str, force_sync: bool = False):
-    """
-    Sends structured push notifications to your Telegram channel/chat.
-    Dispatched on a background daemon thread to eliminate execution latency.
-    """
-    cfg = load_config()
-    if not cfg.get("enabled") or not cfg.get("bot_token") or not cfg.get("chat_id"):
-        return False
-
-    if force_sync:
-        return _send_http_post(cfg["bot_token"], cfg["chat_id"], message)
-
-    t = threading.Thread(
-        target=_send_http_post,
-        args=(cfg["bot_token"], cfg["chat_id"], message),
-        daemon=True
+def alert_order_fill(ticket, symbol, direction, lots, price, sl, tp, prob=None):
+    prob_str = f" | Prob: <b>{prob:.1f}%</b>" if prob else ""
+    card = (
+        f"🎯 <b>NEXUS ALPHA EXECUTION FILL</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• Ticket: <code>#{ticket}</code>\n"
+        f"• Pair: <b>{symbol}</b> ({direction})\n"
+        f"• Size: <code>{lots} Lots</code>{prob_str}\n"
+        f"• Entry: <code>{price}</code>\n"
+        f"• Stop Loss: <code>{sl}</code>\n"
+        f"• Target TP: <code>{tp}</code>\n"
+        f"• Time: <code>{datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}</code>"
     )
-    t.start()
-    return True
+    return send_raw_alert(card)
 
-# Institutional Alert Formatters
-def notify_order_filled(symbol, order_type, lots, entry, sl, tp, confluence, setup_name):
-    msg = (
-        f"⚡ <b>SENTINEL OMEGA: ORDER EXECUTED</b>\n"
+def alert_breakeven_locked(ticket, symbol, new_sl, open_price, profit_usd):
+    card = (
+        f"🛡️ <b>RISK DEFENSE: BREAKEVEN LOCKED</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Symbol:</b> {symbol} | <b>Action:</b> {order_type}\n"
-        f"<b>Volume:</b> {lots:.2f} Lots\n"
-        f"<b>Fill Price:</b> <code>{entry:.5f}</code>\n"
-        f"<b>Stop Loss:</b> <code>{sl:.5f}</code>\n"
-        f"<b>Take Profit:</b> <code>{tp:.5f}</code>\n"
-        f"<b>Confluence:</b> {confluence:.1f}%\n"
-        f"<b>PD Model:</b> {setup_name}\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🛡️ <i>Autonomous 1.0R Breakeven Armed</i>"
+        f"• Ticket: <code>#{ticket}</code> ({symbol})\n"
+        f"• SL Ratchet: <code>{new_sl}</code> (Risk-Free)\n"
+        f"• Open Price: <code>{open_price}</code>\n"
+        f"• Floating PnL: <b>+${profit_usd:,.2f}</b>\n"
+        f"• Rule: +1.0R Threshold Secured"
     )
-    send_telegram_alert(msg)
+    return send_raw_alert(card)
 
-def notify_breakeven_locked(symbol, ticket, new_sl, current_profit):
-    msg = (
-        f"🔒 <b>RISK DEFENSE: BREAKEVEN LOCKED</b>\n"
+def alert_partial_tp_hit(ticket, symbol, close_lots, realized_usd, remaining_lots):
+    card = (
+        f"💰 <b>PROFIT HARVEST: +1.8R TARGET</b>\n"
         f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<b>Symbol:</b> {symbol} (Ticket #{ticket})\n"
-        f"<b>Stop Loss Moved To:</b> <code>{new_sl:.5f}</code>\n"
-        f"<b>Floating Gain:</b> +${current_profit:.2f} USD\n"
-        f"━━━━━━━━━━━━━━━━━━━━━\n"
-        f"✨ <i>Downside Risk Neutralized (Free Trade)</i>"
+        f"• Ticket: <code>#{ticket}</code> ({symbol})\n"
+        f"• Harvested: <code>{close_lots} Lots</code> (50% Scale-out)\n"
+        f"• Realized: <b>+${realized_usd:,.2f}</b>\n"
+        f"• Remaining: <code>{remaining_lots} Lots</code> Runner Active"
     )
-    send_telegram_alert(msg)
+    return send_raw_alert(card)
+
+def alert_circuit_breaker(old_regime, new_regime, equity, floor, action_taken):
+    emoji = "🚨" if "LOCKOUT" in new_regime else "⚠️" if "CAUTION" in new_regime else "🟢"
+    card = (
+        f"{emoji} <b>CIRCUIT BREAKER REGIME SHIFT</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"• Previous: <code>{old_regime}</code>\n"
+        f"• Active Regime: <b>{new_regime}</b>\n"
+        f"• Current Equity: <b>${equity:,.2f}</b>\n"
+        f"• Risk Floor: <code>${floor:,.2f}</code>\n"
+        f"• Action: <b>{action_taken}</b>\n"
+        f"• Timestamp: <code>{datetime.now(timezone.utc).strftime('%H:%M:%S UTC')}</code>"
+    )
+    return send_raw_alert(card)

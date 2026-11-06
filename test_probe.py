@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from apex_ml_feature_engine import ApexMicrostructureML
 
 PATH = r"C:\Program Files\MetaTrader 5\terminal64.exe"

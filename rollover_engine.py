@@ -1,4 +1,4 @@
-﻿import os
+import os
 import json
 import datetime
 import MetaTrader5 as mt5

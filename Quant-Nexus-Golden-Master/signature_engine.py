@@ -1,4 +1,4 @@
-﻿"""
+"""
 Quant Nexus Microstructure & Signature Engine
 Enhanced with ICT Institutional Microstructure Models (MMSM / MMBM)
 """

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 path = r"C:\Quant-Nexus-Eng\telegram_interactive.py"
 
 with open(path, "r", encoding="utf-8-sig", errors="ignore") as f:

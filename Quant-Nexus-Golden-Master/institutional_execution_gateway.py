@@ -1,4 +1,4 @@
-﻿"""
+"""
 Quant-Nexus Institutional Execution Gateway (IEG)
 ==================================================
 Sub-system components:

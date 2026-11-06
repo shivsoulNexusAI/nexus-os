@@ -1,4 +1,4 @@
-﻿import time
+import time
 from datetime import datetime, timezone, timedelta
 import MetaTrader5 as mt5
 import requests

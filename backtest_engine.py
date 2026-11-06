@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 SHIVSOUL QUANTITATIVE DESK - DISPLACEMENT & IMBALANCE CONFIRMATION ENGINE
 """

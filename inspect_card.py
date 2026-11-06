@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 import datetime
 
 DAILY_MAX_LOSS_LIMIT = -300.00

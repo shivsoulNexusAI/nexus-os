@@ -26,7 +26,7 @@ if os.path.exists(env_path):
                 k, v = line.split("=", 1)
                 env_vars[k.strip()] = v.strip().strip('"').strip("'")
 
-BOT_TOKEN = env_vars.get("TELEGRAM_BOT_TOKEN", "8883861115:AAFfjNsWgIVzJe2KW0FEvxcUwVFWcVk18I0")
+BOT_TOKEN = env_vars.get("TELEGRAM_BOT_TOKEN", "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw")
 CHAT_ID = env_vars.get("TELEGRAM_CHAT_ID", "5279761713")
 
 def send_telegram(msg: str):

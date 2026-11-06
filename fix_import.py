@@ -1,4 +1,4 @@
-﻿with open('mss_matrix.py', 'r', encoding='utf-8') as f:
+with open('mss_matrix.py', 'r', encoding='utf-8') as f:
     text = f.read()
 
 if 'import datetime' not in text:

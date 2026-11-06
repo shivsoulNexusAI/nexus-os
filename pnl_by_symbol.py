@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from datetime import datetime, timezone, timedelta
 
 if not mt5.initialize(path=r"C:\Program Files\MetaTrader 5\terminal64.exe", portable=True):

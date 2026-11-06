@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 NEXUS DYNAMIC RISK & TELEMETRIC PRODUCTION ENGINE (NDRE-v2.0)
 Universal Asset-Agnostic Risk Guard, Fractional Kelly Sizer & Trailing Daemon.

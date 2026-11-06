@@ -1,4 +1,4 @@
-﻿import re
+import re
 
 target = r"C:\Quant-Nexus-Eng\telegram_interactive.py"
 

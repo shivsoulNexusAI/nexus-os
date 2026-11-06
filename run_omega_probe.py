@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from apex_omega_engine import ApexOmegaEngine
 
 PATH = r"C:\Program Files\MetaTrader 5\terminal64.exe"

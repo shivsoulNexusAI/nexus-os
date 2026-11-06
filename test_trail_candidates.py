@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from m5_structural_trail import get_latest_m5_swing, BUFFER_FACTORS
 
 if mt5.initialize():

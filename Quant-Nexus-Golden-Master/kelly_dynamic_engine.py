@@ -1,4 +1,4 @@
-﻿"""
+"""
 SHIVSOUL 10K QUANT-NEXUS ECOSYSTEM
 Dynamic Quarter-Kelly Position Sizing Engine
 """

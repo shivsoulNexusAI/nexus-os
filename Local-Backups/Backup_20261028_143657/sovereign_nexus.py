@@ -1,4 +1,4 @@
-from nexus_trailing_ratchet import autonomous_trailing_ratchet
+﻿from nexus_trailing_ratchet import autonomous_trailing_ratchet
 from nexus_recap_engine import handle_recap_command, handle_recap_callback, autonomous_recap_scheduler
 def log_tp_event(event_dict):
     try:
@@ -753,7 +753,7 @@ ZMQ_PORT = 5558
 
 
 
-BOT_TOKEN = "8883861115:AAFfjNsWgIVzJe2KW0FEvxcUwVFWcVk18I0"
+BOT_TOKEN = "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw"
 
 
 

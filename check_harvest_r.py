@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 
 def check_harvest_r():
     if not mt5.initialize():

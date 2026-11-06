@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 SHIVSOUL QUANTITATIVE MISSION CONTROL - DESK DASHBOARD
 Real-Time Multi-Asset Telemetry, ML Regime Oversight & Shadow vs. Live Comparison

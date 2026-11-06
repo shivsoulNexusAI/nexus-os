@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from mss_matrix import audit_ict_killzone, evaluate_ict_setup
 
 kz = audit_ict_killzone()

@@ -1,4 +1,4 @@
-"""
+﻿"""
 QUANTUM DELTA DAEMON // INSTITUTIONAL TELEMETRY, KRONOS GATING, & AUTONOMOUS MT5 EXECUTION
 """
 import sys
@@ -27,7 +27,7 @@ if BASE_DIR not in sys.path:
 
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8883861115:AAFfjNsWgIVzJe2KW0FEvxcUwVFWcVk18I0").strip()
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw").strip()
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "5279761713").strip()
 SHADOW_PATH = os.path.join(BASE_DIR, "shadow_portfolio.json")
 

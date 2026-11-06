@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from mss_matrix import evaluate_ict_setup
 
 if mt5.initialize():

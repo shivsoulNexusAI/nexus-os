@@ -237,7 +237,7 @@ def poll_and_broadcast_closed_positions(bot, target_chat_id: int):
         acc = mt5.account_info()
         equity = getattr(acc, "equity", 0.0) if acc else 0.0
         active_cnt = len(current_tickets)
-        slots = ["■" if i < active_cnt else "□" for i in range(3)]
+        slots = ["в– " if i < active_cnt else "□" for i in range(3)]
         slot_bar = f"[{''.join(slots)}]"
         pnl_sign = "+" if realized_pnl >= 0 else ""
         outcome_icon = "🟢" if realized_pnl >= 0 else "🔴"
@@ -753,7 +753,7 @@ ZMQ_PORT = 5558
 
 
 
-BOT_TOKEN = "8883861115:AAFfjNsWgIVzJe2KW0FEvxcUwVFWcVk18I0"
+BOT_TOKEN = "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw"
 
 
 
@@ -8902,7 +8902,7 @@ def build_dual_engine_keyboard(
 
 
 
-          InlineKeyboardButton("₿ BTCUSD", callback_data="SWITCH_BTCUSD"),
+          InlineKeyboardButton("в‚ї BTCUSD", callback_data="SWITCH_BTCUSD"),
 
 
 
@@ -8920,7 +8920,7 @@ def build_dual_engine_keyboard(
 
 
 
-          InlineKeyboardButton("🥇 XAUUSD", callback_data="SWITCH_XAUUSD"),
+          InlineKeyboardButton("рџҐ‡ XAUUSD", callback_data="SWITCH_XAUUSD"),
 
 
 
@@ -8938,7 +8938,7 @@ def build_dual_engine_keyboard(
 
 
 
-          InlineKeyboardButton("💶 EURUSD", callback_data="SWITCH_EURUSD"),
+          InlineKeyboardButton("рџ’¶ EURUSD", callback_data="SWITCH_EURUSD"),
 
 
 
@@ -9154,7 +9154,7 @@ def build_dual_engine_keyboard(
 
 
 
-              f"🔥 2% ({r_two['lot']})",
+              f"рџ”Ґ 2% ({r_two['lot']})",
 
 
 
@@ -9262,7 +9262,7 @@ def build_dual_engine_keyboard(
 
 
 
-              "➖ .01", callback_data=f"STEP_DEC_{symbol}_{lot_str}"
+              "вћ– .01", callback_data=f"STEP_DEC_{symbol}_{lot_str}"
 
 
 
@@ -9334,7 +9334,7 @@ def build_dual_engine_keyboard(
 
 
 
-              "�• .01", callback_data=f"STEP_INC_{symbol}_{lot_str}"
+              "пїЅ• .01", callback_data=f"STEP_INC_{symbol}_{lot_str}"
 
 
 
@@ -9712,7 +9712,7 @@ def build_dual_engine_keyboard(
 
 
 
-          InlineKeyboardButton("🛑 PASS", callback_data="PASS"),
+          InlineKeyboardButton("рџ›‘ PASS", callback_data="PASS"),
 
 
 
@@ -9766,7 +9766,7 @@ def build_dual_engine_keyboard(
 
 
 
-          InlineKeyboardButton("💼 AUDIT", callback_data="AUDIT"),
+          InlineKeyboardButton("рџ’ј AUDIT", callback_data="AUDIT"),
 
 
 
@@ -9784,7 +9784,7 @@ def build_dual_engine_keyboard(
 
 
 
-          InlineKeyboardButton("⚠️ FLATTEN", callback_data="FLATTEN"),
+          InlineKeyboardButton("вљ пёЏ FLATTEN", callback_data="FLATTEN"),
 
 
 
@@ -10450,7 +10450,7 @@ async def text_command_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 
-    await update.message.reply_text(f"⚠️ <b>Quote unavailable for {sym} on MT5.</b>", parse_mode="HTML")
+    await update.message.reply_text(f"вљ пёЏ <b>Quote unavailable for {sym} on MT5.</b>", parse_mode="HTML")
 
 
 
@@ -11062,7 +11062,7 @@ async def text_command_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 
-      f"• <b>MT5 Execution:</b> ✅ <code>Ticket #{res} FILLED</code>\n"
+      f"• <b>MT5 Execution:</b> вњ… <code>Ticket #{res} FILLED</code>\n"
 
 
 
@@ -11152,7 +11152,7 @@ async def text_command_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 
-      "🤖 <i>Manual text command filled instantly.</i>"
+      "рџ¤– <i>Manual text command filled instantly.</i>"
 
 
 
@@ -11458,7 +11458,7 @@ async def text_command_handler(update: Update, context: ContextTypes.DEFAULT_TYP
 
 
 
-      f"⚠️ <b>Order Execution Failed:</b> <code>{res}</code>", parse_mode="HTML"
+      f"вљ пёЏ <b>Order Execution Failed:</b> <code>{res}</code>", parse_mode="HTML"
 
 
 
@@ -11746,7 +11746,7 @@ async def photo_upload_handler(
 
 
 
-        "🔬 <b>AUDITING UPLOADED CHART MATRIX...</b>", parse_mode="HTML"
+        "рџ”¬ <b>AUDITING UPLOADED CHART MATRIX...</b>", parse_mode="HTML"
 
 
 
@@ -11944,7 +11944,7 @@ async def photo_upload_handler(
 
 
 
-      await msg.edit_text("⚠️ No image format recognized.")
+      await msg.edit_text("вљ пёЏ No image format recognized.")
 
 
 
@@ -13222,7 +13222,7 @@ async def photo_upload_handler(
 
 
 
-            f"• <b>🧪 Shadow Backtest:</b> <b>{shadow['win_rate']}%</b>"
+            f"• <b>рџ§Є Shadow Backtest:</b> <b>{shadow['win_rate']}%</b>"
 
 
 
@@ -13294,7 +13294,7 @@ async def photo_upload_handler(
 
 
 
-            f"• <b>MT5 Execution:</b> ✅ <code>Ticket #{res} FILLED</code>\n"
+            f"• <b>MT5 Execution:</b> вњ… <code>Ticket #{res} FILLED</code>\n"
 
 
 
@@ -13420,7 +13420,7 @@ async def photo_upload_handler(
 
 
 
-            "🤖 <i>Institutional criteria satisfied. Order placed.</i>"
+            "рџ¤– <i>Institutional criteria satisfied. Order placed.</i>"
 
 
 
@@ -13906,7 +13906,7 @@ async def photo_upload_handler(
 
 
 
-        "🔬 <b>QUANT NEXUS DEEP-DELTA AUDIT</b>\n"
+        "рџ”¬ <b>QUANT NEXUS DEEP-DELTA AUDIT</b>\n"
 
 
 
@@ -14032,7 +14032,7 @@ async def photo_upload_handler(
 
 
 
-        f"• <b>🧪 Shadow Backtest:</b> <b>{shadow['win_rate']}%</b>"
+        f"• <b>рџ§Є Shadow Backtest:</b> <b>{shadow['win_rate']}%</b>"
 
 
 
@@ -14122,7 +14122,7 @@ async def photo_upload_handler(
 
 
 
-        f"• <b>Entry Zone:</b> <code>{spot - (50.0 if is_btc else 1.0):,.2f} –"
+        f"• <b>Entry Zone:</b> <code>{spot - (50.0 if is_btc else 1.0):,.2f} вЂ“"
 
 
 
@@ -14464,7 +14464,7 @@ async def photo_upload_handler(
 
 
 
-    err = f"⚠️ <b>INGESTION NOTICE:</b> <code>{str(e)[:300]}</code>"
+    err = f"вљ пёЏ <b>INGESTION NOTICE:</b> <code>{str(e)[:300]}</code>"
 
 
 
@@ -15346,7 +15346,7 @@ async def dispatch_autonomous_parallel_executions(context, qualified_setups: lis
 
 
 
-        "🤖 <b>SOVEREIGN NEXUS // AUTONOMOUS AUTO-FIRE FILLED</b>\n"
+        "рџ¤– <b>SOVEREIGN NEXUS // AUTONOMOUS AUTO-FIRE FILLED</b>\n"
 
 
 
@@ -16868,7 +16868,7 @@ async def process_omega_execution_queue(context, scan_results: list):
 
 
 
-        f"• <b>MT5 Execution:</b> ✅ <code>Ticket #{res.get('ticket')}</code>\n"
+        f"• <b>MT5 Execution:</b> вњ… <code>Ticket #{res.get('ticket')}</code>\n"
 
 
 
@@ -17648,7 +17648,7 @@ async def check_and_autofire_queue(context, scan_results: list):
 
 
 
-        f"• <b>MT5 Execution:</b> ✅ <code>Ticket #{res.get('ticket')}</code>\n"
+        f"• <b>MT5 Execution:</b> вњ… <code>Ticket #{res.get('ticket')}</code>\n"
 
 
 
@@ -18535,7 +18535,7 @@ async def check_and_broadcast_closed_deals(context):
 
 
 
-        "⚡ <i>Slot Capacity Freed — Scanner Active for Next Setup.</i>"
+        "⚡ <i>Slot Capacity Freed вЂ” Scanner Active for Next Setup.</i>"
 
 
 
@@ -18753,7 +18753,7 @@ def build_positions_telemetry_lines() -> str:
 def generate_omega_apex_status_card() -> str:
     import MetaTrader5 as mt5
     if not mt5.initialize():
-        return '⚠️ <b>SMART QUANT NEXUS:</b> MT5 Bridge Offline'
+        return 'вљ пёЏ <b>SMART QUANT NEXUS:</b> MT5 Bridge Offline'
     acc = mt5.account_info()
     login = getattr(acc, 'login', 278013334) if acc else 278013334
     balance = getattr(acc, 'balance', 0.0) if acc else 0.0
@@ -18769,7 +18769,7 @@ def generate_omega_apex_status_card() -> str:
     for p in positions:
         vol = getattr(p, 'volume', 0.0)
         net_lots += vol if getattr(p, 'type', 0) == 0 else -vol
-    slots = ['■' if i < count else '□' for i in range(3)]
+    slots = ['в– ' if i < count else '□' for i in range(3)]
     slot_bar = f'[{"".join(slots)}]'
     pnl_sign = '+' if net_pnl >= 0 else ''
     bias_str = 'Long' if net_lots > 0 else ('Short' if net_lots < 0 else 'Flat')
@@ -18855,15 +18855,15 @@ async def auto_execute_high_confluence_trade(app, symbol: str, bias: str, score:
             "⚡ <b>AUTOPILOT SENTRY // ORDER EXECUTED</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
             "<pre>\n"
-            "┌ EXECUTION RECEIPT ───────────────┐\n"
-            f"│ Asset:       {symbol} ({bias.upper()})\n"
-            f"│ Ticket:      #{result.order}\n"
-            f"│ Volume:      0.01 Lots\n"
-            f"│ Fill Price:  {fill_price:,.2f}\n"
-            f"│ Confluence:  {score:.1f}% (HIGH-EDGE)\n"
-            f"│ Stop Loss:   {sl:,.2f}\n"
-            "│ Sentry Mode: AUTOPILOT ENGAGED   │\n"
-            "└──────────────────────────────────┘\n"
+            "в”Њ EXECUTION RECEIPT в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”ђ\n"
+            f"в”‚ Asset:       {symbol} ({bias.upper()})\n"
+            f"в”‚ Ticket:      #{result.order}\n"
+            f"в”‚ Volume:      0.01 Lots\n"
+            f"в”‚ Fill Price:  {fill_price:,.2f}\n"
+            f"в”‚ Confluence:  {score:.1f}% (HIGH-EDGE)\n"
+            f"в”‚ Stop Loss:   {sl:,.2f}\n"
+            "в”‚ Sentry Mode: AUTOPILOT ENGAGED   в”‚\n"
+            "└в”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”Ђв”\n"
             "</pre>"
         )
         chat_id = getattr(app, "chat_id", None) or 8883861115
@@ -18876,7 +18876,7 @@ async def account_command(update, context):
     args = getattr(context, 'args', [])
     if not args:
         lines = [
-            "🏦 <b>SMART QUANT NEXUS ACCOUNT BRIDGE</b>",
+            "рџЏ¦ <b>SMART QUANT NEXUS ACCOUNT BRIDGE</b>",
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
             "• <b>Active Route:</b> PRIMARY (#278013334)",
             "• <b>Server Link:</b>  Exness-MT5Real16",
@@ -18896,7 +18896,7 @@ async def account_command(update, context):
 
     target_alias = args[0]
     srv = args[1] if len(args) > 1 else None
-    await update.message.reply_text(f"⏳ <i>Switching IPC bridge to {target_alias}...</i>", parse_mode="HTML")
+    await update.message.reply_text(f"вЏі <i>Switching IPC bridge to {target_alias}...</i>", parse_mode="HTML")
     success, msg = await hot_swap_mt5_account(target_alias, server=srv)
     await update.message.reply_text(msg, parse_mode="HTML")
 def resolve_broker_symbol(symbol: str) -> str:
@@ -20483,7 +20483,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-    await query.message.reply_text(f"⏳ <b>DISPATCHING ORDER:</b> <code>{target_sym} {target_bias}</code>...", parse_mode="HTML")
+    await query.message.reply_text(f"вЏі <b>DISPATCHING ORDER:</b> <code>{target_sym} {target_bias}</code>...", parse_mode="HTML")
 
 
 
@@ -20807,7 +20807,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        "❌ <b>ORDER EXECUTION REJECTED</b>\n"
+        "вќЊ <b>ORDER EXECUTION REJECTED</b>\n"
 
 
 
@@ -20897,7 +20897,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        "⚠️ <i>Check broker symbol suffix, margin, or market hours.</i>"
+        "вљ пёЏ <i>Check broker symbol suffix, margin, or market hours.</i>"
 
 
 
@@ -21167,7 +21167,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-      status = f"🛡️ <b>TICKET #{ticket} MOVED TO BREAK-EVEN ({be_sl:,.2f}).</b>" if ok else "⚠️ <b>Could not modify SL.</b>"
+      status = f"🛡️ <b>TICKET #{ticket} MOVED TO BREAK-EVEN ({be_sl:,.2f}).</b>" if ok else "вљ пёЏ <b>Could not modify SL.</b>"
 
 
 
@@ -21203,7 +21203,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-      status = f"⚠️ <b>Ticket #{ticket} not found on terminal.</b>"
+      status = f"вљ пёЏ <b>Ticket #{ticket} not found on terminal.</b>"
 
 
 
@@ -21329,7 +21329,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-    status = f"📉 <b>PARTIAL CLOSE (50%):</b> {msg_txt}" if ok else f"⚠️ <b>Partial Close Failed:</b> {msg_txt}"
+    status = f"рџ“‰ <b>PARTIAL CLOSE (50%):</b> {msg_txt}" if ok else f"вљ пёЏ <b>Partial Close Failed:</b> {msg_txt}"
 
 
 
@@ -21455,7 +21455,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-    status = f"🛑 <b>FULL CLOSE:</b> {msg_txt}" if ok else f"⚠️ <b>Close Failed:</b> {msg_txt}"
+    status = f"рџ›‘ <b>FULL CLOSE:</b> {msg_txt}" if ok else f"вљ пёЏ <b>Close Failed:</b> {msg_txt}"
 
 
 
@@ -21887,7 +21887,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        "🔬 <b>QUANT NEXUS DEEP-DELTA AUDIT</b>\n"
+        "рџ”¬ <b>QUANT NEXUS DEEP-DELTA AUDIT</b>\n"
 
 
 
@@ -21995,7 +21995,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        f"• <b>🧪 Shadow Backtest:</b> <b>{shadow['win_rate']}%</b>"
+        f"• <b>рџ§Є Shadow Backtest:</b> <b>{shadow['win_rate']}%</b>"
 
 
 
@@ -22085,7 +22085,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        f"• <b>Entry Zone:</b> <code>{spot - (50.0 if is_btc else 1.0):,.2f} –"
+        f"• <b>Entry Zone:</b> <code>{spot - (50.0 if is_btc else 1.0):,.2f} вЂ“"
 
 
 
@@ -24083,7 +24083,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        f"✅ <b>MT5 TICKET #{res} FILLED:</b> Market Buy"
+        f"вњ… <b>MT5 TICKET #{res} FILLED:</b> Market Buy"
 
 
 
@@ -24137,7 +24137,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        else f"⚠️ <b>EXECUTION NOTICE:</b> {res}"
+        else f"вљ пёЏ <b>EXECUTION NOTICE:</b> {res}"
 
 
 
@@ -24245,7 +24245,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-    await query.message.reply_text("💤 <b>C2:</b> Trade skipped.", parse_mode="HTML")
+    await query.message.reply_text("рџ’¤ <b>C2:</b> Trade skipped.", parse_mode="HTML")
 
 
 
@@ -24299,7 +24299,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        f"💼 <b>AUDIT:</b> {acc['positions']} open tickets ({acc['delta']:+.2f}L)"
+        f"рџ’ј <b>AUDIT:</b> {acc['positions']} open tickets ({acc['delta']:+.2f}L)"
 
 
 
@@ -24443,7 +24443,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        "⚠️ <b>EMERGENCY FLATTEN ENGAGED.</b>", parse_mode="HTML"
+        "вљ пёЏ <b>EMERGENCY FLATTEN ENGAGED.</b>", parse_mode="HTML"
 
 
 
@@ -24767,7 +24767,7 @@ async def trigger_circuit_breaker(application, current_eq, peak_eq):
 
 
 
-    "🚨 <b>MAX DRAWDOWN CIRCUIT BREAKER TRIPPED</b> 🚨\n"
+    "рџљЁ <b>MAX DRAWDOWN CIRCUIT BREAKER TRIPPED</b> рџљЁ\n"
 
 
 
@@ -24875,7 +24875,7 @@ async def trigger_circuit_breaker(application, current_eq, peak_eq):
 
 
 
-    "⚠️ <b>EMERGENCY PROTOCOL ACTIVATED</b>\n"
+    "вљ пёЏ <b>EMERGENCY PROTOCOL ACTIVATED</b>\n"
 
 
 
@@ -25937,7 +25937,7 @@ async def autonomous_market_sentry(application):
 
 
 
-                msg = f"🛡️ <b>BREAK-EVEN SECURED:</b> #{ticket} ({sym}) SL ➔ <code>{be_sl:,.{digits}f}</code>"
+                msg = f"🛡️ <b>BREAK-EVEN SECURED:</b> #{ticket} ({sym}) SL вћ” <code>{be_sl:,.{digits}f}</code>"
 
 
 
@@ -26081,7 +26081,7 @@ async def autonomous_market_sentry(application):
 
 
 
-                msg = f"🛡️ <b>BREAK-EVEN SECURED:</b> #{ticket} ({sym}) SL ➔ <code>{be_sl:,.{digits}f}</code>"
+                msg = f"🛡️ <b>BREAK-EVEN SECURED:</b> #{ticket} ({sym}) SL вћ” <code>{be_sl:,.{digits}f}</code>"
 
 
 
@@ -26243,7 +26243,7 @@ async def autonomous_market_sentry(application):
 
 
 
-                msg = f"📈 <b>TRAILING RATCHET:</b> #{ticket} ({sym}) SL ➔ <code>{prop_sl:,.{digits}f}</code>"
+                msg = f"рџ“€ <b>TRAILING RATCHET:</b> #{ticket} ({sym}) SL вћ” <code>{prop_sl:,.{digits}f}</code>"
 
 
 
@@ -26351,7 +26351,7 @@ async def autonomous_market_sentry(application):
 
 
 
-                msg = f"📉 <b>TRAILING RATCHET:</b> #{ticket} ({sym}) SL ➔ <code>{prop_sl:,.{digits}f}</code>"
+                msg = f"рџ“‰ <b>TRAILING RATCHET:</b> #{ticket} ({sym}) SL вћ” <code>{prop_sl:,.{digits}f}</code>"
 
 
 
@@ -26980,7 +26980,7 @@ async def positions_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-      text=f"💼 <b>EXPOSURE AUDIT:</b>\n{body}",
+      text=f"рџ’ј <b>EXPOSURE AUDIT:</b>\n{body}",
 
 
 
@@ -27196,7 +27196,7 @@ async def flatten_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-      text="⚠️ <b>FLATTEN ENGAGED.</b> Liquidating open tickets.",
+      text="вљ пёЏ <b>FLATTEN ENGAGED.</b> Liquidating open tickets.",
 
 
 
@@ -27538,7 +27538,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        "🤖 <b>AUTOPILOT ARMED (≥85% Confluence).</b>", parse_mode="HTML"
+        "рџ¤– <b>AUTOPILOT ARMED (≥85% Confluence).</b>", parse_mode="HTML"
 
 
 
@@ -27628,7 +27628,7 @@ async def text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 
-        "⏸️ <b>AUTOPILOT PAUSED (Manual Confirmation).</b>", parse_mode="HTML"
+        "вЏёпёЏ <b>AUTOPILOT PAUSED (Manual Confirmation).</b>", parse_mode="HTML"
 
 
 
@@ -29968,7 +29968,7 @@ async def mode_cmd(update, context):
 
 
 
-    status_headline = "🤖 <b>AUTONOMOUS REGIME ENGAGED</b>"
+    status_headline = "рџ¤– <b>AUTONOMOUS REGIME ENGAGED</b>"
 
 
 
@@ -30166,7 +30166,7 @@ async def mode_cmd(update, context):
 
 
 
-    "⚙️ <b>SOVEREIGN NEXUS // EXECUTION REGIME</b>",
+    "вљ™пёЏ <b>SOVEREIGN NEXUS // EXECUTION REGIME</b>",
 
 
 
@@ -30508,7 +30508,7 @@ async def scan_cmd(update, context):
 
 
 
-  msg_wait = await update.message.reply_text("🛰️ <i>Computing institutional multi-asset confluence matrix...</i>", parse_mode="HTML")
+  msg_wait = await update.message.reply_text("рџ›°пёЏ <i>Computing institutional multi-asset confluence matrix...</i>", parse_mode="HTML")
 
 
 
@@ -30886,7 +30886,7 @@ async def scan_cmd(update, context):
 
 
 
-        lines.append(f"🔒 <b>{asset}:</b> <code>SESSION CLOSED (Weekend)</code>")
+        lines.append(f"рџ”’ <b>{asset}:</b> <code>SESSION CLOSED (Weekend)</code>")
 
 
 
@@ -31066,7 +31066,7 @@ async def scan_cmd(update, context):
 
 
 
-      bias_icon = "🟢 BUY" if bias == "BUY" else ("🔴 SELL" if bias == "SELL" else "⚪ NEUTRAL")
+      bias_icon = "🟢 BUY" if bias == "BUY" else ("🔴 SELL" if bias == "SELL" else "вљЄ NEUTRAL")
 
 
 
@@ -31264,7 +31264,7 @@ async def scan_cmd(update, context):
 
 
 
-        status_tag = "💤 CONSOLIDATION"
+        status_tag = "рџ’¤ CONSOLIDATION"
 
 
 
@@ -31426,7 +31426,7 @@ async def scan_cmd(update, context):
 
 
 
-      lines.append("🔥 <b>INSTITUTIONAL SETUPS READY:</b>")
+      lines.append("рџ”Ґ <b>INSTITUTIONAL SETUPS READY:</b>")
 
 
 
@@ -31714,7 +31714,7 @@ async def scan_cmd(update, context):
 
 
 
-    await msg_wait.edit_text(f"⚠️ <b>Radar Error:</b> <code>{e}</code>", parse_mode="HTML")
+    await msg_wait.edit_text(f"вљ пёЏ <b>Radar Error:</b> <code>{e}</code>", parse_mode="HTML")
 
 
 
@@ -32128,7 +32128,7 @@ async def sim_cmd(update, context):
 
 
 
-    "⚠️ <i>Awaiting execution authorization:</i>"
+    "вљ пёЏ <i>Awaiting execution authorization:</i>"
 
 
 
@@ -32398,7 +32398,7 @@ async def error_handler(update, context):
 
 
 
-        f"⚠️ <b>System Exception:</b> <code>{context.error}</code>",
+        f"вљ пёЏ <b>System Exception:</b> <code>{context.error}</code>",
 
 
 
@@ -33312,7 +33312,7 @@ async def autonomous_apex_hunter(context):
 
 
 
-              f"🤖 <b>SOVEREIGN NEXUS // AUTONOMOUS FILL</b>\n"
+              f"рџ¤– <b>SOVEREIGN NEXUS // AUTONOMOUS FILL</b>\n"
 
 
 
@@ -33726,7 +33726,7 @@ async def autonomous_apex_hunter(context):
 
 
 
-            "⚠️ <i>Awaiting execution authorization:</i>"
+            "вљ пёЏ <i>Awaiting execution authorization:</i>"
 
 
 
@@ -36336,7 +36336,7 @@ def build_eod_statement_text(data: dict) -> str:
 
 
 
-  status_icon = "🛡️ OPTIMAL" if data["drawdown_pct"] < 2.0 else "⚠️ ELEVATED"
+  status_icon = "🛡️ OPTIMAL" if data["drawdown_pct"] < 2.0 else "вљ пёЏ ELEVATED"
 
 
 
@@ -36426,7 +36426,7 @@ def build_eod_statement_text(data: dict) -> str:
 
 
 
-    f"📅 <b>Audit Period:</b> <code>{data['now_utc']}</code>",
+    f"рџ“… <b>Audit Period:</b> <code>{data['now_utc']}</code>",
 
 
 
@@ -36444,7 +36444,7 @@ def build_eod_statement_text(data: dict) -> str:
 
 
 
-    f"⚙️ <b>Execution Regime:</b> <code>{data['regime']}</code>",
+    f"вљ™пёЏ <b>Execution Regime:</b> <code>{data['regime']}</code>",
 
 
 
@@ -36480,7 +36480,7 @@ def build_eod_statement_text(data: dict) -> str:
 
 
 
-    "📊 <b>REALIZED BOOK (TODAY UTC):</b>",
+    "рџ“Љ <b>REALIZED BOOK (TODAY UTC):</b>",
 
 
 
@@ -36624,7 +36624,7 @@ def build_eod_statement_text(data: dict) -> str:
 
 
 
-    "💼 <b>CAPITAL & RISK GOVERNANCE:</b>",
+    "рџ’ј <b>CAPITAL & RISK GOVERNANCE:</b>",
 
 
 
