@@ -1,0 +1,21 @@
+{
+  "chat_id": "5279761713",
+  "nexus_ai_bot": {
+    "name": "Nexus AI Bot",
+    "token": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",
+    "chat_id": "5279761713",
+    "role": "Autonomous Straddle Telemetry & High-Speed Execution"
+  },
+  "quant_alert_bot": {
+    "name": "Quant Alert Bot",
+    "token": "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw",
+    "chat_id": "5279761713",
+    "role": "Macro Portfolio Governance, Account Delta & Risk Harvester"
+  },
+  "telegram_dev_guard_bot": {
+    "name": "Dev Guard / Test Bot",
+    "token": "8500432698:AAFLDz1nN_JeSMo2HBNx2gujV7tSlMfQGGg",
+    "chat_id": "5279761713",
+    "role": "Heartbeat Sentinel, 25MB RAM Watchdog & Host Telemetry"
+  }
+}
