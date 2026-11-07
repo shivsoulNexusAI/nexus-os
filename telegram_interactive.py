@@ -1,12 +1,24 @@
-import nexus_regime_kelly as nrk
-regime_sizer = nrk.NexusRegimeKelly()
-import nexus_ml_gate as mg
-ml_gate = mg.NexusMLGate(min_confidence=0.68)
-import nexus_hybrid_scalp as hs
-scalper = hs.NexusHybridScalper()
-import nexus_profit_guard as pg
-import nexus_risk_guard as rg
-import nexus_omega_engine as oe
+
+import json, os
+
+CADENCE_ANCHOR_FILE = r"C:\Quant-Nexus-Eng\cadence_anchor.json"
+
+def get_cadence_anchor_id():
+    try:
+        if os.path.exists(CADENCE_ANCHOR_FILE):
+            with open(CADENCE_ANCHOR_FILE, "r", encoding="utf-8") as _f:
+                return json.load(_f).get("message_id")
+    except Exception:
+        pass
+    return None
+
+def set_cadence_anchor_id(msg_id):
+    try:
+        with open(CADENCE_ANCHOR_FILE, "w", encoding="utf-8") as _f:
+            json.dump({"message_id": msg_id}, _f)
+    except Exception:
+        pass
+
 from nexus_risk_engine import risk_engine
 
 LAST_ROLLOVER_DATE = ""
@@ -400,12 +412,6 @@ def ensure_mt5():
 
 
 def execute_market_order(symbol, direction, lot=0.01, sl=0.0, tp=0.0):
-    # --- OMEGA APEX ML GATE VERIFICATION ---
-    prob, ml_pass, ml_reason = ml_gate.predict_trade_probability(symbol, direction.upper())
-    if not ml_pass:
-        print(f"[{symbol}] ??? ML GATE BLOCKED {direction.upper()}: {ml_reason}")
-        return False, f"ML Gate Blocked: {ml_reason}", 0
-    # ----------------------------------------
 
 
 
@@ -959,26 +965,6 @@ def scan_all_assets():
 
 
 def execute_autonomous_signal(candidate, chat_id=None, bot_instance=None):
-    # --- PHASE 5: DYNAMIC REGIME & KELLY RESIZING ---
-    try:
-        import MetaTrader5 as mt5_core
-        cand_sym = candidate.get('symbol', 'BTCUSD')
-        sym_info = mt5_core.symbol_info(cand_sym)
-        cand_point = sym_info.point if sym_info else 0.01
-        price_val = float(candidate.get('price', 0.0) or 0.0)
-        sl_val = float(candidate.get('sl', 0.0) or 0.0)
-        cand_sl_pts = max(abs(price_val - sl_val) / cand_point, 50.0) if sl_val > 0 else 200.0
-        ml_p, _, _ = ml_gate.predict_trade_probability(cand_sym, candidate.get('direction', 'SELL'))
-        dyn_lots, reg_state, reg_audit = regime_sizer.compute_kelly_lots(cand_sym, ml_p, cand_sl_pts, reward_ratio=2.33)
-        if dyn_lots > 0:
-            candidate['lots'] = dyn_lots
-            print(f"[{cand_sym}] ?? DYNAMIC KELLY SIZED: {dyn_lots}L ({reg_audit})")
-        else:
-            print(f"[{cand_sym}] ??? BLOCKED BY REGIME TURBULENCE: {reg_audit}")
-            return
-    except Exception as e:
-        print(f"[REGIME KELLY ERROR]: {e}")
-    # ------------------------------------------------
     import MetaTrader5 as mt5
     if not mt5.terminal_info():
         mt5.initialize(
@@ -1133,34 +1119,41 @@ def render_leaderboard_card(scans=None, autopilot_status=None):
 
 
 
-        # Institutional Positions Fetch
-    import MetaTrader5 as _m
-    positions = list(_m.positions_get() or []) if _m.initialize() else []
-    all_positions = positions
-    active_count = len(positions)
     lines = []
-    lines.append("🏛️ <b>NEXUS HEDGE DESK | OMEGA APEX ELITE MATRIX</b>")
+
+    lines.append("🏛️ <b>NEXUS HEDGE DESK | INSTITUTIONAL MATRIX</b>")
+
     lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append(f"<code>NAV:      ${eq:,.2f}  | Float: {pnl_sign}${tot_pnl:,.2f} (" + ("LOCKED BE" if (positions and any(getattr(p, "profit", 0) > 0 and getattr(p, "sl", 0) != 0 for p in positions)) else ("OPEN" if positions else "FLAT")) + ")</code>")
+
+    lines.append(f"<code>NAV:      ${eq:,.2f}  | Float: {pnl_sign}${tot_pnl:,.2f}</code>")
+
     lines.append(f"<code>Free Mgn: ${mf:,.2f}  | Fleet: {active_count}/5 Locked</code>")
-    lines.append("<code>Engine:   OMEGA-APEX-v2.0 | Mode: AUTONOMOUS</code>")
+
     lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("⚡ <b>ACTIVE POSITIONS (CORRELATION SHIELD)</b>")
-    import MetaTrader5 as _m; positions = list(_m.positions_get() or []) if _m.initialize() else [];
-    if positions:
-        for pos in (locals().get('all_positions') or globals().get('all_positions') or []):
-            s_sym = pos.symbol
-            side_str = "[SHORT]" if pos.type == 1 else "[BUY]"
+
+
+
+    # 1. LIVE ACTIVE POSITIONS BLOCK
+
+    if open_sym_map:
+
+        lines.append("⚡ <b>LIVE MARKET EXECUTIONS (LOCKED)</b>")
+
+        for s_sym, pos in open_sym_map.items():
+
+            side_str = "BUY" if pos.type == 0 else "SELL"
+
             pnl_s = "+" if pos.profit >= 0 else ""
-            lines.append(f"• <b>{s_sym}</b> {side_str} {pos.volume:.2f}L | Float: {pnl_s}${pos.profit:,.2f}")
-            lines.append(f"  Open: {pos.price_open:,.2f} | SL: {pos.sl:,.2f} (🔒 PROTECTED)")
-    else:
-        lines.append("• <i>No Active Market Exposures</i>")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+            lines.append(f"<u><b>{s_sym}</b> • {side_str} {pos.volume:.2f}L | Float: {pnl_s}${pos.profit:,.2f} | Open: {pos.price_open:,.2f}</u>")
+
+        lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+
 
     # 2. SCANNER FLEET (5 ASSETS)
 
-    lines.append("📡 <b>MICROSTRUCTURE SCANNER FLEET (60S)</b>")
+    lines.append("📡 <b>SCANNER FLEET | 60S CADENCE</b>")
 
     rank = 1
 
@@ -1222,7 +1215,7 @@ def render_leaderboard_card(scans=None, autopilot_status=None):
 
         lines.append(f"🎯 <b>ALPHA TRIGGER: {c_sym} ({c_dir} @ {c_edge}%)</b>")
 
-        lines.append("• <b>Allocation:</b> <code>Dynamic Half-Kelly | Regime-Calibrated</code>")
+        lines.append(f"• <b>Order Sizing:</b> <code>{c_lots:.2f} Lots (1% Dynamic Risk)</code>")
 
         lines.append(f"• <b>Entry:</b> <code>${c_entry:,.3f}</code>")
 
@@ -2025,6 +2018,8 @@ async def background_scan_daemon(app):
 
 
 
+                if not DASHBOARD_MSG_ID:
+                    DASHBOARD_MSG_ID = get_cadence_anchor_id()
                 if DASHBOARD_MSG_ID:
 
 
@@ -2085,8 +2080,6 @@ async def background_scan_daemon(app):
 
 
 
-                pg.protect_fleet_profits()
-                scalper.synchronize_runner()
                 print(f"[{t_now}] [60s-SCAN ALL 5] {summary_line} | Locked: {active_syms}")
                 # --- AUTONOMOUS TELEMETRY & PERSISTENT LIVE-DASHBOARD ---
                 try:
@@ -2308,6 +2301,7 @@ async def handle_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
             DASHBOARD_MSG_ID = query.message.message_id
+            set_cadence_anchor_id(DASHBOARD_MSG_ID)
 
 
 
@@ -3123,25 +3117,3 @@ if __name__ == "__main__":
 
 
 
-
-
-async def cmd_scan(update, context):
-    try:
-        matrix_msg, _ = build_institutional_fleet_matrix()
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-        kb = [
-            [InlineKeyboardButton("🔄 Run Scan Again", callback_data="scan_now")],
-            [InlineKeyboardButton("💼 Accounts Switchboard", callback_data="switchboard")]
-        ]
-        if update.callback_query:
-            await update.callback_query.answer()
-            await update.callback_query.edit_message_text(matrix_msg, reply_markup=InlineKeyboardMarkup(kb))
-        elif update.message:
-            await update.message.reply_text(matrix_msg, reply_markup=InlineKeyboardMarkup(kb))
-    except Exception as e:
-        msg = f"❌ Scan generation error: {e}"
-        if update.callback_query:
-            await update.callback_query.answer()
-            await update.callback_query.edit_message_text(msg)
-        elif update.message:
-            await update.message.reply_text(msg)
