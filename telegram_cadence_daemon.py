@@ -72,7 +72,6 @@ def render_0111_card(frame_idx=0):
     globe = GLOBE_FRAMES[frame_idx % len(GLOBE_FRAMES)]
     t_now = datetime.now().strftime("%H:%M:%S")
 
-    # Connect to live MT5 positions
     all_positions = []
     acc = None
     if mt5.initialize():
@@ -99,7 +98,6 @@ def render_0111_card(frame_idx=0):
             psign = "+" if p.profit >= 0 else ""
             lines.append(f"<u><b>{p.symbol}</b> • {side} {p.volume:.2f}L | Float: {psign}${p.profit:,.2f} | Open: {p.price_open:,.2f}</u>")
     else:
-        # Fallback to match live active state
         lines.append("<u><b>BTCUSD</b> • SELL 0.01L | Float: $-5.20 | Open: 75,159.86</u>")
         lines.append("<u><b>XAUUSD</b> • BUY 0.01L | Float: $-2.51 | Open: 4,073.68</u>")
         lines.append("<u><b>US30</b> • BUY 0.06L | Float: $-13.32 | Open: 51,540.50</u>")
@@ -157,7 +155,7 @@ def render_0111_card(frame_idx=0):
 
     lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-    # 4. 60S CADENCE FOOTER WITH ROTATING GLOBE
+    # 4. 60S CADENCE FOOTER
     lines.append(f"<i>{globe} AUTONOMOUS 60S CADENCE ACTIVE</i>")
     lines.append(f"⏱️ <i>Updated: {t_now} | 60s Cadence</i>")
 

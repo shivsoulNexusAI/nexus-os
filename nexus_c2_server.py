@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import json
 import logging
 from datetime import datetime, timezone

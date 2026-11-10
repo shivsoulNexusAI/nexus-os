@@ -1,4 +1,4 @@
-﻿"""
+r"""
 Nexus AI Bot Telemetry Daemon for Terminal 2 (#278041169)
 Target Account : 278041169 (Exness-MT5Trial5)
 Terminal Path  : C:\MT5_Pending_278041169\terminal64.exe
@@ -27,7 +27,7 @@ logging.basicConfig(
 )
 log = logging.getLogger("PendingMajors")
 
-MT5_PATH = r"C:\MT5_Pending_278041169\terminal64.exe"
+MT5_PATH = r"C:/MT5_Quant_278017866/terminal64.exe"
 ACCOUNT = 278041169
 POLL_INTERVAL = 2.0
 
@@ -54,7 +54,7 @@ def send_nexus_ai_alert(message: str):
         log.warning("Telegram dispatch error: %s", e)
 
 def init_terminal() -> bool:
-    if not mt5.initialize(path=MT5_PATH):
+    if not mt5.initialize(path=r"C:/MT5_Quant_278017866/terminal64.exe", portable=False):
         log.error("Failed to initialize terminal at %s | Error: %s", MT5_PATH, mt5.last_error())
         return False
 

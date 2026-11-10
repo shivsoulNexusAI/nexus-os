@@ -1,138 +1,194 @@
 """
-QUANT NEXUS SOVEREIGN RISK KERNEL (v3.0)
-Single source of truth for dynamic Kelly sizing, portfolio drawdown governance,
-and non-blocking Telegram telemetry across all execution engines.
+QUANTNEXUS RISK KERNEL (v2.0 Institutional Hardened)
+Implements bounded fractional Kelly Criterion (Half-Kelly), leverage envelopes,
+consecutive loss de-risking, and tick-exact broker lot quantization.
 """
-import os
-import json
-import time
+import math
 import logging
-from datetime import datetime, timezone
-import MetaTrader5 as mt5
+from typing import Dict, Any, Optional
 
-try:
-    from nexus_telegram import send_alert
-except ImportError:
-    def send_alert(role, msg): logging.info(f"[{role}] {msg}")
+logger = logging.getLogger("NexusRiskKernel")
 
-STATE_FILE = r"C:\Quant-Nexus-Eng\risk_state.json"
+# Institutional Envelopes
+MAX_PORTFOLIO_RISK_CAP = 0.030   # 3.0% maximum aggregate risk on any single trade setup
+MIN_PORTFOLIO_RISK_FLOOR = 0.002 # 0.20% minimum risk floor to maintain mathematical edge
+MAX_LEVERAGE_CAP = 10.0          # Max notional trade leverage permitted (Notional / Equity <= 10x)
+KELLY_FRACTION = 0.50            # Strict Half-Kelly multiplier
+MAX_CONSECUTIVE_LOSS_PENALTY = 3 # Consecutive loss count where de-risking engages
 
 class NexusRiskKernel:
-    _instance = None
+    def __init__(
+        self,
+        kelly_fraction: float = KELLY_FRACTION,
+        max_risk_cap: float = MAX_PORTFOLIO_RISK_CAP,
+        min_risk_floor: float = MIN_PORTFOLIO_RISK_FLOOR,
+        max_leverage: float = MAX_LEVERAGE_CAP
+    ):
+        self.c = kelly_fraction
+        self.max_risk_cap = max_risk_cap
+        self.min_risk_floor = min_risk_floor
+        self.max_leverage = max_leverage
 
-    def __new__(cls, *args, **kwargs):
-        if not cls._instance:
-            cls._instance = super(NexusRiskKernel, cls).__new__(cls)
-            cls._instance._init_kernel()
-        return cls._instance
-
-    def _init_kernel(self):
-        self.max_daily_dd_pct = 0.05    # 5% Max Daily Drawdown lockout
-        self.defensive_dd_pct = 0.025   # 2.5% Half-Kelly throttle
-        self.kelly_fraction   = 0.25    # Quarter-Kelly baseline
-        self.min_risk_pct     = 0.0025  # 0.25% equity floor
-        self.max_risk_pct     = 0.02    # 2.0% equity ceiling
-        self.load_state()
-
-    def load_state(self):
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        if os.path.exists(STATE_FILE):
-            try:
-                with open(STATE_FILE, "r", encoding="utf-8") as f:
-                    self.state = json.load(f)
-                if self.state.get("date") != today_str:
-                    self._reset_daily_state(today_str)
-            except Exception:
-                self._reset_daily_state(today_str)
-        else:
-            self._reset_daily_state(today_str)
-
-    def _reset_daily_state(self, date_str):
-        self.state = {
-            "date": date_str,
-            "starting_balance": 0.0,
-            "peak_equity_hwm": 0.0,
-            "circuit_breaker_tripped": False,
-            "lockout_reason": "",
-            "last_updated": time.time()
-        }
-        self.save_state()
-
-    def save_state(self):
-        try:
-            with open(STATE_FILE, "w", encoding="utf-8") as f:
-                json.dump(self.state, f, indent=4)
-        except Exception as e:
-            logging.error(f"[RISK-KERNEL-IO-ERR] {e}")
-
-    def audit_governance(self) -> tuple[bool, str, dict]:
-        """Audits current MT5 account equity against high-watermark boundaries."""
-        acc = mt5.account_info()
-        if not acc:
-            return False, "MT5 Account Disconnected", {}
-
-        eq = acc.equity
-        bal = acc.balance
-        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-        if self.state.get("date") != today_str:
-            self._reset_daily_state(today_str)
-
-        if self.state["starting_balance"] <= 0.0:
-            self.state["starting_balance"] = bal
-            self.state["peak_equity_hwm"] = max(bal, eq)
-
-        if eq > self.state["peak_equity_hwm"]:
-            self.state["peak_equity_hwm"] = eq
-
-        hwm = self.state["peak_equity_hwm"]
-        drawdown_pct = (hwm - eq) / hwm if hwm > 0 else 0.0
-
-        if drawdown_pct >= self.max_daily_dd_pct:
-            if not self.state["circuit_breaker_tripped"]:
-                self.state["circuit_breaker_tripped"] = True
-                self.state["lockout_reason"] = f"Hard 5% DD breach (-{drawdown_pct*100:.2f}%)"
-                send_alert("quant_alert_bot", f"🚨 <b>CIRCUIT BREAKER LATCHED</b>\nNAV: ${eq:,.2f} | HWM: ${hwm:,.2f}\nDrawdown: {drawdown_pct*100:.2f}% (Limit: 5%)")
-            self.save_state()
-            return False, self.state["lockout_reason"], {"regime": "LOCKED", "equity": eq, "hwm": hwm}
-
-        regime = "DEFENSIVE" if drawdown_pct >= self.defensive_dd_pct else "OPTIMAL"
-        self.save_state()
-        return True, "CLEAR", {"regime": regime, "equity": eq, "hwm": hwm, "dd_pct": drawdown_pct}
-
-    def compute_position_size(self, symbol: str, stop_loss_points: float, edge: float = 0.55, payoff: float = 1.6) -> float:
-        """Calculates dynamic lot sizing via Fractional Kelly scaled to account equity."""
-        allowed, reason, metrics = self.audit_governance()
-        if not allowed or stop_loss_points <= 0:
-            return 0.0
-
-        acc = mt5.account_info()
-        info = mt5.symbol_info(symbol)
-        if not acc or not info:
-            return 0.0
-
-        # Kelly formulation: f* = (p*b - q) / b
-        p = max(0.40, min(edge, 0.85))
-        b = max(1.0, payoff)
+    def compute_kelly_fraction(
+        self,
+        win_rate: float,
+        avg_win: float,
+        avg_loss: float,
+        consecutive_losses: int = 0
+    ) -> float:
+        """
+        Calculates bounded Half-Kelly fraction with consecutive-loss attenuation.
+        Returns fraction of equity to risk on trade [min_risk_floor, max_risk_cap].
+        """
+        # Sanitization & boundary checks
+        p = max(0.01, min(0.99, win_rate))
         q = 1.0 - p
-        raw_kelly = (p * b - q) / b
+        b = (avg_win / abs(avg_loss)) if abs(avg_loss) > 1e-6 else 1.0
 
-        multiplier = self.kelly_fraction
-        if metrics.get("regime") == "DEFENSIVE":
-            multiplier *= 0.50
+        # Unconstrained Continuous Kelly
+        f_star = (p * (b + 1.0) - 1.0) / b
 
-        allocated_pct = max(self.min_risk_pct, min(self.max_risk_pct, raw_kelly * multiplier))
-        risk_cash = acc.equity * allocated_pct
+        # Negative Edge or Zero Edge -> Apply minimum structural floor or zero
+        if f_star <= 0.0:
+            logger.warning(f"[EDGE-WARNING] Kelly fraction non-positive (f*={f_star:.4f}, p={p:.2f}, b={b:.2f}). Enforcing minimal floor.")
+            f_bounded = self.min_risk_floor
+        else:
+            # Scale to Half-Kelly
+            f_scaled = f_star * self.c
+            # Bound within institutional risk envelopes
+            f_bounded = max(self.min_risk_floor, min(self.max_risk_cap, f_scaled))
 
-        tick_val = info.trade_tick_value if info.trade_tick_value > 0 else 1.0
-        tick_size = info.trade_tick_size if info.trade_tick_size > 0 else info.point
-        point_loss_per_lot = (info.point / tick_size) * tick_val
+        # Dynamic De-risking: Attenuate risk during drawdowns / consecutive loss streaks
+        if consecutive_losses >= MAX_CONSECUTIVE_LOSS_PENALTY:
+            decay_factor = 0.75 ** (consecutive_losses - MAX_CONSECUTIVE_LOSS_PENALTY + 1)
+            decay_factor = max(0.25, decay_factor) # Max 75% attenuation
+            f_bounded = max(self.min_risk_floor, f_bounded * decay_factor)
+            logger.info(f"[DE-RISK] Consecutive losses ({consecutive_losses}) engaged: Applied {decay_factor:.2f}x attenuation -> Risk: {f_bounded*100:.2f}%")
 
-        lot_step = info.volume_step if info.volume_step > 0 else 0.01
-        raw_lots = risk_cash / (stop_loss_points * point_loss_per_lot)
+        return round(f_bounded, 5)
 
-        lots = round(raw_lots / lot_step) * lot_step
-        lots = max(info.volume_min, min(info.volume_max, lots))
-        return round(lots, 2)
+    def calculate_bounded_lot_size(
+        self,
+        equity: float,
+        entry_price: float,
+        stop_loss_price: float,
+        symbol_info: Dict[str, Any],
+        win_rate: float = 0.55,
+        avg_win: float = 1.8,
+        avg_loss: float = 1.0,
+        consecutive_losses: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Calculates tick-exact, leverage-capped, and quantized lot volume.
+        """
+        if equity <= 0:
+            return {"lot_size": 0.0, "reason": "ZERO_OR_NEGATIVE_EQUITY"}
 
-risk_kernel = NexusRiskKernel()
+        sl_distance = abs(entry_price - stop_loss_price)
+        if sl_distance <= 1e-6:
+            return {"lot_size": 0.0, "reason": "INVALID_SL_DISTANCE"}
+
+        # Extract broker contract specifications
+        tick_size = symbol_info.get("trade_tick_size", 0.00001)
+        tick_value = symbol_info.get("trade_tick_value", 1.0)
+        contract_size = symbol_info.get("trade_contract_size", 100000.0)
+        vol_min = symbol_info.get("volume_min", 0.01)
+        vol_max = symbol_info.get("volume_max", 100.0)
+        vol_step = symbol_info.get("volume_step", 0.01)
+
+        # 1. Compute target risk cash capital
+        risk_fraction = self.compute_kelly_fraction(win_rate, avg_win, avg_loss, consecutive_losses)
+        target_cash_risk = equity * risk_fraction
+
+        # 2. Derive raw volume from stop loss distance and point value
+        # Cash Risk = Volume * (SL_Distance / Tick_Size) * Tick_Value
+        loss_per_lot = (sl_distance / tick_size) * tick_value
+        if loss_per_lot <= 0.0:
+            return {"lot_size": 0.0, "reason": "INVALID_LOSS_PER_LOT"}
+
+        raw_lots = target_cash_risk / loss_per_lot
+
+        # 3. Notional Value & Maximum Leverage Enveloping
+        # Notional Exposure = Lots * Contract Size * Entry Price
+        notional_value = raw_lots * contract_size * entry_price
+        max_allowed_notional = equity * self.max_leverage
+        
+        if notional_value > max_allowed_notional:
+            capped_lots = max_allowed_notional / (contract_size * entry_price)
+            logger.warning(
+                f"[LEVERAGE-CLAMP] Raw lot ({raw_lots:.3f}) exceeded {self.max_leverage}x leverage cap "
+                f"(${notional_value:,.2f} >${max_allowed_notional:,.2f}). Clamped to {capped_lots:.3f} lots."
+            )
+            raw_lots = capped_lots
+
+        # 4. Discrete Broker Step Quantization (Floor rounding to eliminate over-risk)
+        steps = math.floor(raw_lots / vol_step)
+        quantized_lots = round(steps * vol_step, 4)
+
+        # Clamp within broker bounds
+        if quantized_lots < vol_min:
+            # If target risk permits at least 70% of min lot exposure, grant min lot; otherwise abort
+            min_lot_cash_risk = vol_min * loss_per_lot
+            if min_lot_cash_risk <= (target_cash_risk * 1.30):
+                quantized_lots = vol_min
+            else:
+                logger.info(f"[MIN-LOT-ABORT] Min lot {vol_min} risk (${min_lot_cash_risk:.2f}) exceeds target risk (${target_cash_risk:.2f}) by >30%. Execution suppressed.")
+                return {"lot_size": 0.0, "reason": "BELOW_MIN_LOT_RISK_THRESHOLD"}
+
+        quantized_lots = min(quantized_lots, vol_max)
+        actual_cash_risk = quantized_lots * loss_per_lot
+        actual_risk_pct = (actual_cash_risk / equity) * 100.0
+
+        return {
+            "lot_size": quantized_lots,
+            "target_cash_risk": round(target_cash_risk, 2),
+            "actual_cash_risk": round(actual_cash_risk, 2),
+            "actual_risk_pct": round(actual_risk_pct, 2),
+            "kelly_fraction": risk_fraction,
+            "leverage_used": round((quantized_lots * contract_size * entry_price) / equity, 2),
+            "reason": "OK"
+        }
+
+if __name__ == "__main__":
+    print("=== TESTING NEXUS RISK KERNEL v2.0 ===")
+    kernel = NexusRiskKernel()
+    
+    mock_symbol = {
+        "trade_tick_size": 0.00001,
+        "trade_tick_value": 1.0,
+        "trade_contract_size": 100000.0,
+        "volume_min": 0.01,
+        "volume_max": 50.0,
+        "volume_step": 0.01
+    }
+
+    # Baseline 1.5R edge test
+    res = kernel.calculate_bounded_lot_size(
+        equity=988.78,
+        entry_price=1.05200,
+        stop_loss_price=1.05050, # 15 pip SL
+        symbol_info=mock_symbol,
+        win_rate=0.55,
+        avg_win=27.0,
+        avg_loss=15.0,
+        consecutive_losses=0
+    )
+    print("Standard Trade Sizing Result:")
+    for k, v in res.items():
+        print(f"  • {k:<20}: {v}")
+
+    # Micro-SL Divergence / Leverage Cap Test
+    res_tight = kernel.calculate_bounded_lot_size(
+        equity=988.78,
+        entry_price=1.05200,
+        stop_loss_price=1.05190, # 1 pip SL (divergence stress)
+        symbol_info=mock_symbol,
+        win_rate=0.60,
+        avg_win=30.0,
+        avg_loss=10.0,
+        consecutive_losses=0
+    )
+    print("\nTight SL (1 pip) Leverage-Cap Stress Result:")
+    for k, v in res_tight.items():
+        print(f"  • {k:<20}: {v}")
+    print("======================================")

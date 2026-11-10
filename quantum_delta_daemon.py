@@ -1,248 +1,284 @@
+from volatility_regime_classifier import VolatilityRegimeClassifier
 """
-QUANTUM DELTA DAEMON (v3.1 Institutional Production)
-Multi-Asset Microstructure:
-  - Opening Range Breakout (ORB) & Session Killzone Engine (UTC)
-  - M5 Fair Value Gap (FVG) Imbalance Detection
-  - Market Structure Shift (MSS) Swing Pivot Confluence
-  - Dynamic Fractional Kelly Risk Kernel Sizing
-  - Non-Blocking Asynchronous Trio Bot Telemetry
-  - Strict GC Thresholds for 1GB VPS Stability
+QUANTNEXUS QUANTUM DELTA DAEMON (v3.0 Institutional FVG-CE Edition)
+Automated M5 Market Structure Shift (MSS) + Fair Value Gap (FVG) Consequent
+Encroachment (CE) Limit Order Execution with Half-Kelly Risk Allocation
+and Multi-Terminal Balanced Routing.
 """
 import os
 import gc
 import sys
 import time
-import logging
 from datetime import datetime, timezone
-import pandas as pd
-import numpy as np
+from typing import Dict, List, Any, Optional
 import MetaTrader5 as mt5
 
 sys.path.append(r"C:\Quant-Nexus-Eng")
-from nexus_risk_kernel import risk_kernel
+from nexus_logging_guard import get_rotating_logger
+from nexus_state_guard import read_risk_state
+from nexus_risk_kernel import NexusRiskKernel
+from terminal_balancer import MultiTerminalBalancer
+from imbalance_fvg_detector import ImbalanceFVGDetector
 from nexus_telegram import send_alert
 
-LOG_PATH = r"C:\Quant-Nexus-Eng\quantum_delta_daemon.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_PATH, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("QuantumDeltaDaemon")
+logger = get_rotating_logger("QuantumDeltaDaemon", "quantum_delta_daemon.log")
 
-MT5_PATH = r"C:\MT5_HFT_278041671\terminal64.exe"
-SYMBOLS = ["XAUUSD247", "EURUSD", "GBPUSD", "BTCUSD"]
-MAGIC_DELTA = 888001
-LOOP_CADENCE_SEC = 10
+# Operational Parameters
+POLL_INTERVAL_SEC = 15
+SCAN_SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD", "US30"]
+MAGIC_NUMBER = 770099
+MAX_OPEN_LIMITS_PER_SYMBOL = 1
 
-class InstitutionalKillzoneEngine:
-    """
-    Manages institutional session boundaries and opening range references:
-      - Asian Range:        00:00 - 06:00 UTC
-      - London Open (LO):   07:00 - 10:00 UTC (Initial 15m ORB: 07:00 - 07:15 UTC)
-      - New York AM (NYAM): 12:30 - 15:30 UTC (Initial 15m ORB: 12:30 - 12:45 UTC)
-      - Synthetic 24/7 (XAUUSD247/BTCUSD): Allowed continuously, tagged with active session.
-    """
-    @staticmethod
-    def get_session_context(symbol: str) -> dict:
-        now_utc = datetime.now(timezone.utc)
-        curr_min = now_utc.hour * 60 + now_utc.minute
+risk_kernel = NexusRiskKernel()
+balancer = MultiTerminalBalancer()
+regime_classifier = VolatilityRegimeClassifier()
+fvg_detector = ImbalanceFVGDetector(min_atr_factor=0.35, min_body_ratio=0.60, min_rvol_threshold=1.20)
 
-        # Session intervals in UTC minutes
-        sessions = [
-            {"name": "LONDON_OPEN", "start": 7 * 60, "end": 10 * 60, "orb_window": (7 * 60, 7 * 60 + 15)},
-            {"name": "NEW_YORK_AM", "start": 12 * 60 + 30, "end": 15 * 60 + 30, "orb_window": (12 * 60 + 30, 12 * 60 + 45)},
-            {"name": "ASIAN_RANGE", "start": 0, "end": 6 * 60, "orb_window": (0, 15)}
-        ]
+def count_open_orders_for_symbol(symbol: str, terminal_path: str) -> int:
+    """Counts pending and active positions for a symbol under the magic number."""
+    if not mt5.initialize(path=terminal_path):
+        return 999
+    orders = mt5.orders_get(symbol=symbol)
+    positions = mt5.positions_get(symbol=symbol)
+    mt5.shutdown()
+    
+    total = 0
+    if orders:
+        total += sum(1 for o in orders if o.magic == MAGIC_NUMBER)
+    if positions:
+        total += sum(1 for p in positions if p.magic == MAGIC_NUMBER)
+    return total
 
-        active_kz = None
-        for s in sessions:
-            if s["start"] <= curr_min < s["end"]:
-                active_kz = s
+def place_ce_limit_order(
+    terminal_path: str,
+    terminal_id: str,
+    symbol: str,
+    order_type_str: str,
+    ce_price: float,
+    stop_loss: float,
+    take_profit: float,
+    lot_size: float
+) -> bool:
+    """Dispatches a tick-exact pending Limit order to the assigned MT5 terminal."""
+    if not mt5.initialize(path=terminal_path):
+        logger.error(f"[{terminal_id}] Failed MT5 initialize: {mt5.last_error()}")
+        return False
+
+    order_type = mt5.ORDER_TYPE_BUY_LIMIT if order_type_str == "BUY_LIMIT" else mt5.ORDER_TYPE_SELL_LIMIT
+    
+    request = {
+        "action": mt5.TRADE_ACTION_PENDING,
+        "symbol": symbol,
+        "volume": lot_size,
+        "type": order_type,
+        "price": ce_price,
+        "sl": stop_loss,
+        "tp": take_profit,
+        "deviation": 10,
+        "magic": MAGIC_NUMBER,
+        "comment": f"QN_CE_{order_type_str[:3]}",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": mt5.ORDER_FILLING_RETURN
+    }
+
+    result = mt5.order_send(request)
+    mt5.shutdown()
+    gc.collect()
+
+    if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+        retcode = result.retcode if result else "None"
+        comment = result.comment if result else "No Result"
+        logger.error(f"[{terminal_id}] CE Limit Order Failed ({order_type_str} {symbol} @ {ce_price}): {retcode} - {comment}")
+        return False
+
+    logger.info(f"[{terminal_id}] [ORDER-SENT] Ticket #{result.order} | {order_type_str} {symbol} {lot_size} lots @ {ce_price} | SL: {stop_loss} | TP: {take_profit}")
+    
+    # Broadcast execution alert to Telegram
+    msg = (
+        f"🎯 <b>QUANTNEXUS INSTITUTIONAL CE LIMIT ORDER PLACED</b>\n"
+        f"• Terminal: <code>{terminal_id}</code>\n"
+        f"• Symbol: <b>{symbol}</b> ({order_type_str})\n"
+        f"• Limit Price (CE): <b>{ce_price}</b>\n"
+        f"• Volume: <b>{lot_size} lots</b>\n"
+        f"• Stop Loss: <code>{stop_loss}</code> | Target TP: <code>{take_profit}</code>\n"
+        f"• Ticket: <code>#{result.order}</code>"
+    )
+    send_alert("quant_alert_bot", msg)
+    return True
+
+
+def resolve_target_terminal(balancer_instance) -> Optional[Dict[str, str]]:
+    """Safe resolution matching whatever interface MultiTerminalBalancer exposes."""
+    for method_name in ["get_optimal_terminal", "get_best_terminal", "select_terminal", "get_target_terminal", "get_least_loaded_terminal"]:
+        if hasattr(balancer_instance, method_name) and callable(getattr(balancer_instance, method_name)):
+            return getattr(balancer_instance, method_name)()
+    
+    # Fallback to internal terminal list attribute if exposed
+    for attr in ["terminals", "terminal_pool", "nodes", "config"]:
+        if hasattr(balancer_instance, attr):
+            pool = getattr(balancer_instance, attr)
+            if isinstance(pool, list) and len(pool) > 0:
+                return pool[0] if isinstance(pool[0], dict) else {"id": "DEFAULT", "path": pool[0]}
+                
+    # Ultimate fail-safe default pointing to primary terminal
+    return {
+        "id": "TERM_QUANT_278017866",
+        "path": "C:/MT5_Quant_278017866/terminal64.exe"
+    }
+
+def process_symbol_alpha(symbol: str):
+    """Evaluates market state, unmitigated FVGs, and routes CE Limit orders."""
+    # 1. State Guard Verification
+    risk_state = read_risk_state()
+    if risk_state.get("circuit_breaker_tripped", False):
+        logger.warning(f"[CIRCUIT-BREAKER-ACTIVE] Trading halted: {risk_state.get('active_circuit_reason')}")
+        return
+
+    # 2. Select terminal node with lowest margin utilization / balanced capacity
+    best_node = resolve_target_terminal(balancer)
+    if not best_node:
+        logger.warning("No operational MT5 terminals available via terminal_balancer.")
+        return
+
+    term_path = best_node["path"]
+    term_id = best_node["id"]
+
+    # 3. Guard against duplicate orders per symbol
+    active_count = count_open_orders_for_symbol(symbol, term_path)
+    if active_count >= MAX_OPEN_LIMITS_PER_SYMBOL:
+        return
+
+    # 4. Scan for unmitigated FVGs using primary terminal
+    if not mt5.initialize(path=term_path):
+        return
+    
+    sym_info = mt5.symbol_info(symbol)
+    tick = mt5.symbol_info_tick(symbol)
+    if not sym_info or not tick:
+        mt5.shutdown()
+        return
+
+    # Extract symbol metadata dict for Risk Kernel
+    symbol_dict = {
+        "trade_tick_size": sym_info.trade_tick_size,
+        "trade_tick_value": sym_info.trade_tick_value,
+        "trade_contract_size": sym_info.trade_contract_size,
+        "volume_min": sym_info.volume_min,
+        "volume_max": sym_info.volume_max,
+        "volume_step": sym_info.volume_step
+    }
+
+    acc = mt5.account_info()
+    equity = acc.equity if acc else 1000.0
+
+    # Query Real-Time Volatility Regime
+    regime = regime_classifier.classify_market_regime(symbol, timeframe=mt5.TIMEFRAME_M5)
+    tp_mult = regime.get("tp_multiplier", 2.0)
+    kelly_mod = regime.get("kelly_scale", 1.0)
+
+    imbalances = fvg_detector.scan_symbol_imbalances(symbol, timeframe=mt5.TIMEFRAME_M5, lookback_bars=45)
+    mt5.shutdown()
+    gc.collect()
+
+    if not imbalances:
+        return
+
+    # Find the most recent fresh/unmitigated imbalance
+    for fvg in reversed(imbalances):
+        if fvg["mitigated"]:
+            continue  # Prefer completely untouched voids
+
+        ce_price = fvg["ce_price"]
+        gap_type = fvg["type"]
+
+        # Bullish BISI: CE must be below current Ask price to place a valid BUY_LIMIT
+        if gap_type == "BULLISH_FVG" and ce_price < tick.ask:
+            # Anchor SL below gap low with 3-pip buffer
+            pip_unit = 0.01 if "JPY" in symbol else 0.0001
+            sl_price = round(fvg["gap_low"] - (3.0 * pip_unit), 5)
+            sl_dist = ce_price - sl_price
+            if sl_dist <= 0:
+                continue
+
+            tp_price = round(ce_price + (tp_mult * sl_dist), 5)
+
+            # Half-Kelly position sizing
+            sizing = risk_kernel.calculate_bounded_lot_size(
+                equity=equity,
+                entry_price=ce_price,
+                stop_loss_price=sl_price,
+                symbol_info=symbol_dict,
+                consecutive_losses=risk_state.get("consecutive_losses", 0)
+            )
+
+            if sizing["lot_size"] > 0:
+                logger.info(f"[ALPHA-TRIGGER] {symbol} BULLISH FVG @ CE {ce_price} | Lots: {sizing['lot_size']} | Risk: {sizing['actual_risk_pct']}%")
+                place_ce_limit_order(
+                    terminal_path=term_path,
+                    terminal_id=term_id,
+                    symbol=symbol,
+                    order_type_str="BUY_LIMIT",
+                    ce_price=ce_price,
+                    stop_loss=sl_price,
+                    take_profit=tp_price,
+                    lot_size=sizing["lot_size"]
+                )
                 break
 
-        is_synthetic = any(k in symbol.upper() for k in ["247", "BTC"])
+        # Bearish SIBI: CE must be above current Bid price to place a valid SELL_LIMIT
+        elif gap_type == "BEARISH_FVG" and ce_price > tick.bid:
+            pip_unit = 0.01 if "JPY" in symbol else 0.0001
+            sl_price = round(fvg["gap_high"] + (3.0 * pip_unit), 5)
+            sl_dist = sl_price - ce_price
+            if sl_dist <= 0:
+                continue
 
-        if active_kz is None:
-            return {
-                "in_killzone": is_synthetic,
-                "session": "OFF_SESSION" if not is_synthetic else "SYNTHETIC_CONTINUOUS",
-                "is_orb_expansion": False,
-                "active_kz": active_kz
-            }
+            tp_price = round(ce_price - (tp_mult * sl_dist), 5)
 
-        # Check if currently inside the initial 15-minute Opening Range window
-        is_orb_forming = active_kz["orb_window"][0] <= curr_min < active_kz["orb_window"][1]
-
-        return {
-            "in_killzone": True,
-            "session": active_kz["name"],
-            "is_orb_forming": is_orb_forming,
-            "active_kz": active_kz
-        }
-
-    @staticmethod
-    def audit_orb_levels(df: pd.DataFrame, orb_window_bars: int = 3) -> dict:
-        """
-        Calculates the Opening Range high and low boundaries from the initial M5 candles of the session.
-        """
-        if len(df) < orb_window_bars + 5:
-            return {"orb_high": 0.0, "orb_low": 0.0, "breakout": "NONE"}
-
-        orb_bars = df.iloc[-(orb_window_bars + 5):-5]
-        orb_high = orb_bars["high"].max()
-        orb_low = orb_bars["low"].min()
-        cur_price = df.iloc[-1]["close"]
-
-        if cur_price > orb_high:
-            breakout = "ORB_BULLISH_EXPANSION"
-        elif cur_price < orb_low:
-            breakout = "ORB_BEARISH_EXPANSION"
-        else:
-            breakout = "ORB_INSIDE_CONSOLIDATION"
-
-        return {
-            "orb_high": orb_high,
-            "orb_low": orb_low,
-            "breakout": breakout
-        }
-
-
-class SmartMoneyStructureEngine:
-    @staticmethod
-    def audit_fvg(df: pd.DataFrame) -> dict:
-        """Evaluates 3-candle Fair Value Gap (FVG) on M5."""
-        if len(df) < 3:
-            return {"type": "NONE", "gap_size": 0.0, "top": 0.0, "bottom": 0.0}
-
-        c1 = df.iloc[-3]
-        c2 = df.iloc[-2]
-        c3 = df.iloc[-1]
-
-        # Bullish FVG: Candle 1 High < Candle 3 Low
-        if c3["low"] > c1["high"]:
-            gap = c3["low"] - c1["high"]
-            return {"type": "BULLISH_FVG", "gap_size": gap, "bottom": c1["high"], "top": c3["low"]}
-
-        # Bearish FVG: Candle 1 Low > Candle 3 High
-        if c3["high"] < c1["low"]:
-            gap = c1["low"] - c3["high"]
-            return {"type": "BEARISH_FVG", "gap_size": gap, "top": c1["low"], "bottom": c3["high"]}
-
-        return {"type": "BALANCED", "gap_size": 0.0, "top": 0.0, "bottom": 0.0}
-
-    @staticmethod
-    def audit_mss(df: pd.DataFrame) -> dict:
-        """Detects Market Structure Shift (MSS) using 15-period swing pivots."""
-        if len(df) < 15:
-            return {"shift": "NONE", "pivot_price": 0.0}
-
-        highs = df["high"].values
-        lows = df["low"].values
-        closes = df["close"].values
-
-        recent_swing_high = np.max(highs[-15:-3])
-        recent_swing_low = np.min(lows[-15:-3])
-        current_close = closes[-1]
-
-        if current_close > recent_swing_high:
-            return {"shift": "BULLISH_MSS", "pivot_price": recent_swing_high}
-        elif current_close < recent_swing_low:
-            return {"shift": "BEARISH_MSS", "pivot_price": recent_swing_low}
-
-        return {"shift": "CONSOLIDATION", "pivot_price": 0.0}
-
-
-def evaluate_asset_cycle():
-    clear, reason, metrics = risk_kernel.audit_governance()
-    if not clear:
-        logger.warning(f"[RISK-VETO] Governance lockout active: {reason}")
-        return
-
-    for sym in SYMBOLS:
-        kz = InstitutionalKillzoneEngine.get_session_context(sym)
-        
-        # Killzone Filter Gate: Bypass off-hours for standard forex pairs
-        if not kz["in_killzone"]:
-            continue
-
-        rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M5, 0, 30)
-        if rates is None or len(rates) < 15:
-            continue
-
-        df = pd.DataFrame(rates)
-        fvg = SmartMoneyStructureEngine.audit_fvg(df)
-        mss = SmartMoneyStructureEngine.audit_mss(df)
-        orb = InstitutionalKillzoneEngine.audit_orb_levels(df)
-
-        tick = mt5.symbol_info_tick(sym)
-        spread = (tick.ask - tick.bid) if tick else 0.0
-        cur_price = df.iloc[-1]["close"]
-
-        # Triple Institutional Confluence:
-        # 1. Active Session / ORB Expansion
-        # 2. M5 FVG Imbalance
-        # 3. M5 Market Structure Shift (MSS)
-        
-        bullish_confluence = (
-            fvg["type"] == "BULLISH_FVG" and 
-            mss["shift"] == "BULLISH_MSS" and 
-            orb["breakout"] in ["ORB_BULLISH_EXPANSION", "ORB_INSIDE_CONSOLIDATION"]
-        )
-
-        bearish_confluence = (
-            fvg["type"] == "BEARISH_FVG" and 
-            mss["shift"] == "BEARISH_MSS" and 
-            orb["breakout"] in ["ORB_BEARISH_EXPANSION", "ORB_INSIDE_CONSOLIDATION"]
-        )
-
-        if bullish_confluence:
-            lots = risk_kernel.compute_position_size(sym, stop_loss_points=250, edge=0.64)
-            logger.info(f"🎯 [ORB+SMC CONFLUENCE] {sym} BULLISH MSS + FVG | KZ: {kz['session']} | Price: {cur_price:.3f} | Sizing: {lots} Lots")
-            send_alert(
-                "quant_alert_bot",
-                f"🚀 <b>[ORB+SMC ALPHA TRIGGER]</b> <code>{sym}</code>\n"
-                f"• Session: <b>{kz['session']}</b>\n"
-                f"• Setup: <b>BULLISH MSS + FVG + {orb['breakout']}</b>\n"
-                f"• Close: <code>{cur_price:.3f}</code> | Spread: <code>${spread:.2f}</code>\n"
-                f"• Dynamic Kelly Sizing: <code>{lots:.2f} Lots</code>"
+            sizing = risk_kernel.calculate_bounded_lot_size(
+                equity=equity,
+                entry_price=ce_price,
+                stop_loss_price=sl_price,
+                symbol_info=symbol_dict,
+                consecutive_losses=risk_state.get("consecutive_losses", 0)
             )
 
-        elif bearish_confluence:
-            lots = risk_kernel.compute_position_size(sym, stop_loss_points=250, edge=0.64)
-            logger.info(f"🎯 [ORB+SMC CONFLUENCE] {sym} BEARISH MSS + FVG | KZ: {kz['session']} | Price: {cur_price:.3f} | Sizing: {lots} Lots")
-            send_alert(
-                "quant_alert_bot",
-                f"🔻 <b>[ORB+SMC ALPHA TRIGGER]</b> <code>{sym}</code>\n"
-                f"• Session: <b>{kz['session']}</b>\n"
-                f"• Setup: <b>BEARISH MSS + FVG + {orb['breakout']}</b>\n"
-                f"• Close: <code>{cur_price:.3f}</code> | Spread: <code>${spread:.2f}</code>\n"
-                f"• Dynamic Kelly Sizing: <code>{lots:.2f} Lots</code>"
-            )
+            if sizing["lot_size"] > 0:
+                logger.info(f"[ALPHA-TRIGGER] {symbol} BEARISH FVG @ CE {ce_price} | Lots: {sizing['lot_size']} | Risk: {sizing['actual_risk_pct']}%")
+                place_ce_limit_order(
+                    terminal_path=term_path,
+                    terminal_id=term_id,
+                    symbol=symbol,
+                    order_type_str="SELL_LIMIT",
+                    ce_price=ce_price,
+                    stop_loss=sl_price,
+                    take_profit=tp_price,
+                    lot_size=sizing["lot_size"]
+                )
+                break
 
+def run_quantum_delta_loop():
+    logger.info("================================================================================")
+    logger.info("   QUANTNEXUS QUANTUM DELTA DAEMON v3.0 (FVG-CE INSTITUTIONAL RUNTIME ACTIVE)  ")
+    logger.info("================================================================================")
 
-def main():
-    logger.info("Initializing Quantum Delta SMC + ORB Daemon...")
-    if not mt5.initialize(path=MT5_PATH):
-        logger.error("Failed to connect to MT5 terminal.")
-        return
-
-    logger.info("Connected to MT5. Starting continuous ORB/SMC/FVG pipeline...")
-    gc.set_threshold(700, 10, 5)
-
-    try:
-        while True:
-            evaluate_asset_cycle()
-            gc.collect()  # Enforce tight RAM ceiling for 1GB VPS
-            time.sleep(LOOP_CADENCE_SEC)
-    except KeyboardInterrupt:
-        logger.info("Daemon halted by operator.")
-    finally:
-        mt5.shutdown()
-
-
+    while True:
+        try:
+            for symbol in SCAN_SYMBOLS:
+                sym_info = mt5.symbol_info(symbol)
+                if not sym_info or sym_info.trade_mode != mt5.SYMBOL_TRADE_MODE_FULL:
+                    continue
+                tick = mt5.symbol_info_tick(symbol)
+                if not tick or tick.ask <= 0.0 or tick.bid <= 0.0:
+                    continue
+                import time as _t
+                if (_t.time() - tick.time) > 600:
+                    continue
+                process_symbol_alpha(symbol)
+                time.sleep(1.0)
+            time.sleep(POLL_INTERVAL_SEC)
+        except Exception as exc:
+            logger.error(f"[DAEMON-LOOP-ERR] {exc}")
+            time.sleep(5.0)
 if __name__ == "__main__":
-    main()
+    run_quantum_delta_loop()

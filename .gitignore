@@ -1,9 +1,29 @@
+# Credentials & Secrets
+*password*
+*secret*
+*token*
+*.env
+*.key
+*.pem
+
+# Runtime & Log outputs
+*.log
+*.log.*
 __pycache__/
 *.py[cod]
-*.class
-*.log
-logs/
-.env
-.venv/
-env/
-*.mdmp
+*C:\Program Files\Python312\python.exe.class
+*.tmp
+*.bak
+
+# Vault Backups & Archives
+*.tar.gz
+*.zip
+*.7z
+C:/Quant-Nexus-Vault/
+QuantNexus_A2Z_*
+
+# OS / Editor Artifacts
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini

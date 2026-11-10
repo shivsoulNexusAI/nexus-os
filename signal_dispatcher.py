@@ -1,4 +1,4 @@
-﻿import telegram_telemetry
+import telegram_telemetry
 import time
 import logging
 from datetime import datetime, timezone

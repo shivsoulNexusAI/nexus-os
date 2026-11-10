@@ -1,4 +1,4 @@
-﻿import time
+import time
 import json
 import logging
 import urllib.request

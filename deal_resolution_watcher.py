@@ -1,4 +1,6 @@
-﻿"""
+from nexus_logging_guard import get_rotating_logger
+from nexus_state_guard import read_risk_state, write_risk_state
+"""
 QUANTNEXUS DEAL RESOLUTION WATCHER (v3.0 Institutional Production)
 Watches closed deals across MT5 terminals, atomically updates daily realized PnL
 in risk_state.json, enforces daily circuit breaker ceilings, and broadcasts telemetry.
@@ -13,19 +15,12 @@ from datetime import datetime, timezone, timedelta
 import MetaTrader5 as mt5
 
 sys.path.append(r"C:\Quant-Nexus-Eng")
-from nexus_risk_kernel import risk_kernel
+from nexus_risk_kernel import NexusRiskKernel
+risk_kernel = NexusRiskKernel()
 from nexus_telegram import send_alert
 
 LOG_PATH = r"C:\Quant-Nexus-Eng\deal_resolution_watcher.log"
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_PATH, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger("DealResolutionWatcher")
+logger = get_rotating_logger("DealWatcher", "deal_resolution_watcher.log")
 
 MT5_PATH = r"C:\MT5_HFT_278041671\terminal64.exe"
 STATE_FILE = r"C:\Quant-Nexus-Eng\risk_state.json"
