@@ -1,10 +1,10 @@
 {
-    "date": "2026-11-07",
+    "date": "2026-11-09",
     "starting_balance": 988.78,
-    "peak_equity_hwm": 988.78,
-    "realized_daily_pnl": -11.22,
+    "peak_equity_hwm": 987.49,
+    "realized_daily_pnl": -1.29,
     "circuit_breaker_tripped": false,
     "lockout_reason": "",
-    "last_deal_ticket": 2253095345,
-    "last_updated": 1794045356.7273185
+    "last_deal_ticket": 2254331053,
+    "last_updated": 1794183326.3484447
 }

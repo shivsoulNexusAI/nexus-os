@@ -1,170 +1,236 @@
-from nexus_logging_guard import get_rotating_logger
+# -*- coding: utf-8 -*-
 """
-QUANTNEXUS BREAKEVEN & TRAILING STOP ENGINE (v1.0 Production Dry-Run)
-Audits active positions across MT5, detects 1.5R expansion targets,
-identifies M5 institutional liquidity swing pivots, and ratchets protective stops.
+QUANT-NEXUS RAPID PROFIT PROTECTION & DYNAMIC TRAILING ENGINE
+Dedicated to Account #278041169 (Silo 2) & #278017866 (Silo 1)
 """
 import os
-import gc
 import sys
+import json
 import time
+import math
 import logging
-from datetime import datetime, timezone
+from pathlib import Path
 import MetaTrader5 as mt5
 
-sys.path.append(r"C:\Quant-Nexus-Eng")
-from nexus_telegram import send_alert
+LOG_FILE = Path(r"C:\Quant-Nexus-Prod\core\breakeven_engine.log")
+STATE_PATH = Path(r"C:\Quant-Nexus-Prod\core\breakeven_state.json")
 
-LOG_PATH = r"C:\Quant-Nexus-Eng\breakeven_engine.log"
-logger = get_rotating_logger("BreakevenEngine", "breakeven_engine.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[
+        logging.FileHandler(str(LOG_FILE), encoding="utf-8"),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+log = logging.getLogger("BreakevenEngine")
 
-MT5_PATH = r"C:\MT5_HFT_278041671\terminal64.exe"
-POLL_CADENCE_SEC = 5
-DRY_RUN = True  # Set to False for live execution modification
+SILOS = [
+    {
+        "name": "Silo 2 (Nexus AI Bot)",
+        "login": 278041169,
+        "password": "H@ngkook3695",
+        "server": "Exness-MT5Trial5",
+        "path": r"C:/MT5_Quant_278017866/terminal64.exe",
+        "portable": False
+    },
+    {
+        "name": "Silo 1 (Silver Bullet)",
+        "login": 278017866,
+        "password": "H@ngkook3695",
+        "server": "Exness-MT5Trial5",
+        "path": r"C:/Program Files/MetaTrader 5 - Apex Satellite/terminal64.exe",
+        "portable": False
+    }
+]
 
-gc.set_threshold(700, 10, 5)
+SPREAD_PAD_POINTS = {
+    "EURUSD": 12,
+    "GBPUSD": 15,
+    "USDJPY": 15,
+    "XAUUSD": 60,
+    "BTCUSD": 300,
+    "US30": 30
+}
 
-class BreakevenEngine:
-    def __init__(self):
-        # Maps ticket -> last ratcheted SL to avoid redundant modifications
-        self.ratcheted_tickets = {}
+scaled_tickets = set()
 
-    def get_m5_swing_pivot(self, symbol: str, pos_type: int) -> float:
-        """
-        Identifies the nearest confirmed M5 structural swing pivot.
-        For BUY: Finds recent swing low across last 10 candles.
-        For SELL: Finds recent swing high across last 10 candles.
-        """
-        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 1, 10)
-        if rates is None or len(rates) < 5:
-            return 0.0
+def load_state():
+    global scaled_tickets
+    if STATE_PATH.exists():
+        try:
+            with open(STATE_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                scaled_tickets = set(data.get("scaled_tickets", []))
+        except Exception as e:
+            log.warning("Error loading BE state: %s", e)
 
-        if pos_type == mt5.ORDER_TYPE_BUY:
-            swing_low = min(c['low'] for c in rates[-5:])
-            return float(swing_low)
-        else:
-            swing_high = max(c['high'] for c in rates[-5:])
-            return float(swing_high)
+def save_state():
+    try:
+        with open(STATE_PATH, "w", encoding="utf-8") as f:
+            json.dump({"scaled_tickets": list(scaled_tickets)}, f, indent=2)
+    except Exception as e:
+        log.warning("Error saving BE state: %s", e)
 
-    def evaluate_positions(self):
-        positions = mt5.positions_get()
-        if positions is None or len(positions) == 0:
-            return
+def get_supported_filling(symbol):
+    sym_info = mt5.symbol_info(symbol)
+    if not sym_info:
+        return mt5.ORDER_FILLING_IOC
+    modes = sym_info.filling_mode
+    if modes & 1:
+        return mt5.ORDER_FILLING_FOK
+    elif modes & 2:
+        return mt5.ORDER_FILLING_IOC
+    return mt5.ORDER_FILLING_RETURN
 
-        for pos in positions:
-            ticket = pos.ticket
-            symbol = pos.symbol
-            pos_type = pos.type
-            open_price = pos.price_open
-            current_sl = pos.sl
-            current_tp = pos.tp
-            volume = pos.volume
-            magic = pos.magic
+def audit_silo(silo):
+    path = silo["path"]
+    login = silo["login"]
+    portable = silo["portable"]
 
-            if current_sl <= 0.0:
-                continue
-
-            info = mt5.symbol_info(symbol)
-            if not info:
-                continue
-
-            point = info.point
-            spread = info.spread * point
-            tick = mt5.symbol_info_tick(symbol)
-            if not tick:
-                continue
-
-            current_price = tick.bid if pos_type == mt5.ORDER_TYPE_BUY else tick.ask
-
-            r_risk = abs(open_price - current_sl)
-            if r_risk <= 0.0:
-                continue
-
-            if pos_type == mt5.ORDER_TYPE_BUY:
-                favorable_move = current_price - open_price
-                current_r = favorable_move / r_risk
-            else:
-                favorable_move = open_price - current_price
-                current_r = favorable_move / r_risk
-
-            if current_r >= 1.5:
-                swing_pivot = self.get_m5_swing_pivot(symbol, pos_type)
-
-                if pos_type == mt5.ORDER_TYPE_BUY:
-                    be_baseline = open_price + spread
-                    proposed_sl = max(be_baseline, swing_pivot) if swing_pivot > 0 else be_baseline
-                    proposed_sl = round(proposed_sl, info.digits)
-
-                    if proposed_sl > current_sl and proposed_sl != self.ratcheted_tickets.get(ticket):
-                        self._dispatch_ratchet(pos, current_price, current_r, proposed_sl, "BUY")
-
-                elif pos_type == mt5.ORDER_TYPE_SELL:
-                    be_baseline = open_price - spread
-                    proposed_sl = min(be_baseline, swing_pivot) if swing_pivot > 0 else be_baseline
-                    proposed_sl = round(proposed_sl, info.digits)
-
-                    if (current_sl == 0.0 or proposed_sl < current_sl) and proposed_sl != self.ratcheted_tickets.get(ticket):
-                        self._dispatch_ratchet(pos, current_price, current_r, proposed_sl, "SELL")
-
-    def _dispatch_ratchet(self, pos, current_price, current_r, proposed_sl, direction: str):
-        ticket = pos.ticket
-        symbol = pos.symbol
-        mode_str = "[DRY-RUN]" if DRY_RUN else "[LIVE-EXECUTION]"
-
-        logger.info(
-            f"{mode_str} 🎯 1.5R Expansion Detected on #{ticket} ({symbol} {direction}) | "
-            f"Current R: {current_r:.2f}R | Price: {current_price} | "
-            f"Old SL: {pos.sl} -> New Ratchet SL: {proposed_sl}"
-        )
-
-        if not DRY_RUN:
-            request = {
-                "action": mt5.TRADE_ACTION_SLTP,
-                "position": ticket,
-                "symbol": symbol,
-                "sl": proposed_sl,
-                "tp": pos.tp,
-                "magic": pos.magic
-            }
-            res = mt5.order_send(request)
-            if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                self.ratcheted_tickets[ticket] = proposed_sl
-                logger.info(f"[SL-MODIFIED] #{ticket} successfully updated to SL: {proposed_sl}")
-            else:
-                logger.error(f"[SL-MOD-FAILED] #{ticket} retcode={getattr(res, 'retcode', None)}")
-        else:
-            self.ratcheted_tickets[ticket] = proposed_sl
-
-        dry_badge = "🧪 <b>[DRY-RUN]</b> " if DRY_RUN else "🛡️ "
-        send_alert(
-            "quant_alert_bot",
-            f"{dry_badge}<b>BREAKEVEN RATCHET TRIGGERED</b>\n"
-            f"• Symbol: <code>{symbol}</code> ({direction}) | Ticket: <code>#{ticket}</code>\n"
-            f"• Expansion: <b>+{current_r:.2f}R</b>\n"
-            f"• Entry Price: <code>{pos.price_open}</code>\n"
-            f"• Previous SL: <code>{pos.sl}</code>\n"
-            f"• Ratcheted SL: <b><code>{proposed_sl}</code></b> (M5 Structural Pivot)\n"
-            f"• Status: {'Simulated Modification' if DRY_RUN else 'Order Modified On Terminal'}"
-        )
-
-def main():
-    logger.info(f"Starting Breakeven & Trailing Ratchet Engine (DRY_RUN={DRY_RUN})...")
-    if not mt5.initialize(path=MT5_PATH):
-        logger.error(f"Failed to initialize MT5 at {MT5_PATH}")
+    if not mt5.initialize(path=path, portable=portable):
+        log.warning("MT5 Init failed for %s: %s", silo["name"], mt5.last_error())
         return
 
-    engine = BreakevenEngine()
-    logger.info("Connected to MT5. Monitoring positions for 1.5R structural ratchets.")
+    acc = mt5.account_info()
+    if not acc or acc.login != login:
+        if not mt5.login(login=login, password=silo["password"], server=silo["server"]):
+            log.warning("Login failed for %s (#%s): %s", silo["name"], login, mt5.last_error())
+            mt5.shutdown()
+            return
 
-    try:
-        while True:
-            engine.evaluate_positions()
-            gc.collect()
-            time.sleep(POLL_CADENCE_SEC)
-    except KeyboardInterrupt:
-        logger.info("Breakeven Engine halted by operator.")
-    finally:
+    positions = mt5.positions_get() or []
+    if not positions:
         mt5.shutdown()
+        return
 
-if __name__ == '__main__':
+    active_tickets = {p.ticket for p in positions}
+    dead_tickets = scaled_tickets - active_tickets
+    if dead_tickets:
+        scaled_tickets.difference_update(dead_tickets)
+        save_state()
+
+    for p in positions:
+        ticket = p.ticket
+        sym = p.symbol
+        is_buy = (p.type == mt5.ORDER_TYPE_BUY)
+        open_price = float(p.price_open)
+        mark = float(p.price_current)
+        sl = float(p.sl)
+        volume = float(p.volume)
+
+        sym_info = mt5.symbol_info(sym)
+        if not sym_info:
+            continue
+
+        digits = sym_info.digits
+        point = sym_info.point
+        pad_pts = SPREAD_PAD_POINTS.get(sym.rstrip("m"), 20)
+        spread_pad = pad_pts * point
+
+        if sl > 0 and abs(open_price - sl) > spread_pad:
+            initial_risk = abs(open_price - sl)
+        else:
+            initial_risk = 200 * point
+
+        gain = (mark - open_price) if is_buy else (open_price - mark)
+        r_mult = gain / initial_risk if initial_risk > 0 else 0.0
+
+        # === TIER 1: RAPID BREAKEVEN LOCK (+0.75R) ===
+        if r_mult >= 0.75:
+            target_be_sl = round(open_price + spread_pad if is_buy else open_price - spread_pad, digits)
+            needs_be_lock = False
+            eps = 0.5 * point
+
+            if is_buy and ((target_be_sl - sl) > eps or sl == 0.0):
+                needs_be_lock = True
+            elif not is_buy and ((sl - target_be_sl) > eps or sl == 0.0):
+                needs_be_lock = True
+
+            if needs_be_lock:
+                req = {
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "position": ticket,
+                    "symbol": sym,
+                    "sl": target_be_sl,
+                    "tp": p.tp
+                }
+                res = mt5.order_send(req)
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    log.info("[TIER 1 BE-LOCK] #%s (%s) at +%.2fR -> SL locked at %s", ticket, sym, r_mult, target_be_sl)
+                    sl = target_be_sl
+
+        # === TIER 2: RAPID HARVEST (+1.40R for positions >= 0.02 lots) ===
+        if r_mult >= 1.40 and ticket not in scaled_tickets:
+            step = sym_info.volume_step
+            min_lot = sym_info.volume_min
+            half_vol = round(math.floor((volume / 2.0) / step) * step, 2)
+
+            if half_vol >= min_lot and (volume - half_vol) >= min_lot:
+                close_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
+                close_price = sym_info.bid if is_buy else sym_info.ask
+                close_filling = get_supported_filling(sym)
+
+                req = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "position": ticket,
+                    "symbol": sym,
+                    "volume": half_vol,
+                    "type": close_type,
+                    "price": close_price,
+                    "deviation": 20,
+                    "magic": p.magic,
+                    "comment": "Nexus_Rapid_Harvest_1.4R",
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": close_filling
+                }
+                res = mt5.order_send(req)
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    scaled_tickets.add(ticket)
+                    save_state()
+                    log.info("[TIER 2 HARVEST] #%s (%s) locked 50%% (%.2fL) at +%.2fR", ticket, sym, half_vol, r_mult)
+
+        # === TIER 3: DYNAMIC M5 CANDLE TRAILING STOP (Activates >= +1.2R or post-harvest) ===
+        if r_mult >= 1.20 or ticket in scaled_tickets:
+            rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M5, 1, 2)
+            if rates is not None and len(rates) >= 2:
+                if is_buy:
+                    lowest_low = min(rates[0]["low"], rates[1]["low"])
+                    proposed_sl = round(lowest_low - spread_pad, digits)
+                    if proposed_sl > sl and proposed_sl > (open_price + spread_pad):
+                        mt5.order_send({
+                            "action": mt5.TRADE_ACTION_SLTP,
+                            "position": ticket,
+                            "symbol": sym,
+                            "sl": proposed_sl,
+                            "tp": p.tp
+                        })
+                        log.info("[TIER 3 TRAIL] #%s (%s BUY) SL trailed upward to %s", ticket, sym, proposed_sl)
+                else:
+                    highest_high = max(rates[0]["high"], rates[1]["high"])
+                    proposed_sl = round(highest_high + spread_pad, digits)
+                    if (sl == 0.0 or proposed_sl < sl) and proposed_sl < (open_price - spread_pad):
+                        mt5.order_send({
+                            "action": mt5.TRADE_ACTION_SLTP,
+                            "position": ticket,
+                            "symbol": sym,
+                            "sl": proposed_sl,
+                            "tp": p.tp
+                        })
+                        log.info("[TIER 3 TRAIL] #%s (%s SELL) SL trailed downward to %s", ticket, sym, proposed_sl)
+
+    mt5.shutdown()
+
+def main():
+    log.info("Starting Refined Fast-Protection Breakeven & Trailing Engine...")
+    load_state()
+    while True:
+        try:
+            for silo in SILOS:
+                audit_silo(silo)
+        except Exception as e:
+            log.error("Breakeven cycle exception: %s", e)
+        time.sleep(3)
+
+if __name__ == "__main__":
     main()

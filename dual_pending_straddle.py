@@ -110,6 +110,25 @@ def place_pending_bracket(sq):
     sym = sq["symbol"]
     group_id = f"OCO_{int(time.time())}_{sym}"
     
+    # === QUANT-NEXUS RISK HARDENING: MAX EXPOSURE CLAMP ===
+    MAX_SYMBOL_EXPOSURE = 0.08
+    active_pos_vol = sum(float(p.volume) for p in (mt5.positions_get(symbol=sym) or []))
+    active_ord_vol = sum(float(o.volume_current) for o in (mt5.orders_get(symbol=sym) or []))
+    total_existing = round(active_pos_vol + active_ord_vol, 2)
+    
+    sym_info = mt5.symbol_info(sym)
+    vol_min = float(sym_info.volume_min) if sym_info else 0.01
+    headroom = round(MAX_SYMBOL_EXPOSURE - total_existing, 2)
+    
+    if headroom < vol_min:
+        logging.warning(f"[EXPOSURE LIMIT REACHED] {sym}: Current active {total_existing:.2f} lots >= Cap {MAX_SYMBOL_EXPOSURE:.2f}. Bracket suppressed.")
+        return False
+        
+    requested_lot = float(sq["lot"])
+    effective_lot = min(requested_lot, headroom)
+    sq["lot"] = round(effective_lot, 2)
+    logging.info(f"[EXPOSURE CHECK PASSED] {sym}: Active {total_existing:.2f} lots | Placing bracket sized at {sq['lot']:.2f} lots (Cap: {MAX_SYMBOL_EXPOSURE:.2f})")
+
     # 1. Place Buy Stop
     buy_req = {
         "action": mt5.TRADE_ACTION_PENDING,
