@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import time
 import json
@@ -28,6 +28,7 @@ SYMBOLS = {
     "EURUSD": {"step_mult": 5,  "lookback_sec": 300, "delta_hurdle": 22.0},
     "GBPUSD": {"step_mult": 5,  "lookback_sec": 300, "delta_hurdle": 22.0},
     "USDCHF": {"step_mult": 5,  "lookback_sec": 300, "delta_hurdle": 22.0},
+    "USDCAD": {"step_mult": 5,  "lookback_sec": 300, "delta_hurdle": 22.0},
 }
 
 def analyze_symbol_microstructure(symbol: str, cfg: dict) -> dict | None:
