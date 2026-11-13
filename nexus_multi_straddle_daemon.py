@@ -1,4 +1,4 @@
-import socket
+﻿import socket
 _T2_SINGLETON_SOCK = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 try:
     _T2_SINGLETON_SOCK.bind(("127.0.0.1", 47269))
@@ -35,8 +35,8 @@ logging.basicConfig(
     handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8"), logging.StreamHandler(sys.stdout)],
 )
 
-CORE_TRIAD = ['XAUUSD', 'US30', 'BTCUSD', 'EURUSD', 'USDCHF', 'USDCAD']
-COMPRESSION_MULT = {'XAUUSD': 3.4, 'US30': 2.6, 'BTCUSD': 2.6, 'EURUSD': 2.6, 'USDCHF': 2.6, 'USDCAD': 2.6}
+CORE_TRIAD = ['XAUUSD', 'US30', 'BTCUSD', 'EURUSD', 'USDCHF', 'GBPUSD', 'USDCAD']
+COMPRESSION_MULT = {'XAUUSD': 3.4, 'US30': 2.6, 'BTCUSD': 2.6, 'EURUSD': 2.6, 'USDCHF': 2.6, 'GBPUSD': 2.6, 'USDCAD': 2.6}
 BASE_RISK_PCT = 0.013
 MAX_ACTIVE_ASSETS = 4
 MAGIC_NUMBER = 20260440
@@ -274,7 +274,7 @@ class QuantNexusV44Daemon:
                     if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                         logging.info(f"[V4.4 EOD FLAT CLOSE] Closed non-runner {p.symbol} #{p.ticket} PnL=${p.profit:+.2f}")
                         send_v43_alert(
-                            f"🏁 <b>[V4.4 EOD SESSION CLOSE]</b>\n"
+                            f"рџЏЃ <b>[V4.4 EOD SESSION CLOSE]</b>\n"
                             f"Asset: <b>{p.symbol}</b> (#{p.ticket})\n"
                             f"Volume: {p.volume}L | Realized PnL: <b>${p.profit:+.2f}</b>"
                         )
@@ -460,7 +460,7 @@ class QuantNexusV44Daemon:
                     self.daily_traded.add((date_str, sym))
                     logging.info(f"[V4.4 INST BUY ARMED] {sym} {lot}L BUY_STOP @ {round(box['buy_stop'], info.digits)} | SL={sl_buy} | Delta={delta_pct:+.1f}% | Vol={vol_ratio:.2f}x (#{res.order})")
                     send_v43_alert(
-                        f"🚀 <b>[V4.4 INSTITUTIONAL BUY ARMED]</b>\n"
+                        f"рџљЂ <b>[V4.4 INSTITUTIONAL BUY ARMED]</b>\n"
                         f"Asset: <b>{sym}</b> ({lot}L) | Ticket: #{res.order}\n"
                         f"Entry Stop: <code>{round(box['buy_stop'], info.digits)}</code> | SL: <code>{sl_buy}</code>\n"
                         f"H1: <b>BULL</b> | Delta: <b>{delta_pct:+.1f}%</b> | Vol: <b>{vol_ratio:.2f}x</b>"
@@ -489,7 +489,7 @@ class QuantNexusV44Daemon:
                     self.daily_traded.add((date_str, sym))
                     logging.info(f"[V4.4 BREAKOUT BUY FILLED] {sym} {lot}L MKT_BUY @ {tick.ask} | SL={sl_buy} | Delta={delta_pct:+.1f}% | Vol={vol_ratio:.2f}x (#{res.order})")
                     send_v43_alert(
-                        f"⚡ <b>[V4.4 BREAKOUT BUY FILLED]</b>\n"
+                        f"вљЎ <b>[V4.4 BREAKOUT BUY FILLED]</b>\n"
                         f"Asset: <b>{sym}</b> ({lot}L) | Ticket: #{res.order}\n"
                         f"Fill Price: <code>{tick.ask}</code> | SL: <code>{sl_buy}</code>\n"
                         f"H1: <b>BULL</b> | Delta: <b>{delta_pct:+.1f}%</b> | Vol: <b>{vol_ratio:.2f}x</b>"
@@ -520,7 +520,7 @@ class QuantNexusV44Daemon:
                     self.daily_traded.add((date_str, sym))
                     logging.info(f"[V4.4 INST SELL ARMED] {sym} {lot}L SELL_STOP @ {round(box['sell_stop'], info.digits)} | SL={sl_sell} | Delta={delta_pct:+.1f}% | Vol={vol_ratio:.2f}x (#{res.order})")
                     send_v43_alert(
-                        f"🔻 <b>[V4.4 INSTITUTIONAL SELL ARMED]</b>\n"
+                        f"рџ”» <b>[V4.4 INSTITUTIONAL SELL ARMED]</b>\n"
                         f"Asset: <b>{sym}</b> ({lot}L) | Ticket: #{res.order}\n"
                         f"Entry Stop: <code>{round(box['sell_stop'], info.digits)}</code> | SL: <code>{sl_sell}</code>\n"
                         f"H1: <b>BEAR</b> | Delta: <b>{delta_pct:+.1f}%</b> | Vol: <b>{vol_ratio:.2f}x</b>"
@@ -549,7 +549,7 @@ class QuantNexusV44Daemon:
                     self.daily_traded.add((date_str, sym))
                     logging.info(f"[V4.4 BREAKOUT SELL FILLED] {sym} {lot}L MKT_SELL @ {tick.bid} | SL={sl_sell} | Delta={delta_pct:+.1f}% | Vol={vol_ratio:.2f}x (#{res.order})")
                     send_v43_alert(
-                        f"⚡ <b>[V4.4 BREAKOUT SELL FILLED]</b>\n"
+                        f"вљЎ <b>[V4.4 BREAKOUT SELL FILLED]</b>\n"
                         f"Asset: <b>{sym}</b> ({lot}L) | Ticket: #{res.order}\n"
                         f"Fill Price: <code>{tick.bid}</code> | SL: <code>{sl_sell}</code>\n"
                         f"H1: <b>BEAR</b> | Delta: <b>{delta_pct:+.1f}%</b> | Vol: <b>{vol_ratio:.2f}x</b>"
@@ -622,3 +622,4 @@ def _emit_m15_heartbeat(now_utc, daily_box_cache, ms_raw):
 
 if __name__ == "__main__":
     QuantNexusV44Daemon().run()
+
