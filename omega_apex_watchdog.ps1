@@ -1,8 +1,5 @@
-﻿$py = "C:\Program Files\Python312\python.exe"
-$procs = Get-CimInstance Win32_Process -Filter "Name LIKE 'python%'" | Select-Object -ExpandProperty CommandLine
-if (-not ($procs -match "microstructure_sentinel\.py")) {
-    Start-Process -FilePath $py -ArgumentList "C:\Quant-Nexus-Eng\microstructure_sentinel.py" -WorkingDirectory "C:\Quant-Nexus-Eng" -WindowStyle Hidden
-}
-if (-not ($procs -match "nexus_omega_apex_daemon\.py")) {
-    Start-Process -FilePath $py -ArgumentList "C:\Quant-Nexus-Eng\nexus_omega_apex_daemon.py" -WorkingDirectory "C:\Quant-Nexus-Eng" -WindowStyle Hidden
+﻿# SINGLE-MASTER PRODUCTION GUARD: Terminal 2 (#278041169) ONLY
+$mt5Procs = Get-CimInstance Win32_Process -Filter "Name = 'terminal64.exe'"
+if (-not ($mt5Procs | Where-Object { $_.ExecutablePath -match "MT5_Pending_278041169" })) {
+    Start-Process -FilePath "C:\MT5_Pending_278041169\terminal64.exe" -ArgumentList "/portable" -WorkingDirectory "C:\MT5_Pending_278041169"
 }
