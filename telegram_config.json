@@ -1,8 +1,6 @@
-
-
 {
-  "bot_token": "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw",
-  "authorized_chat_id": "5279761713",
-  "poll_interval_sec": 2.0,
-  "notifications_enabled": true
+    "bot_token": "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw",
+    "authorized_chat_id": "5279761713",
+    "poll_interval_sec": 2.0,
+    "notifications_enabled": true
 }
