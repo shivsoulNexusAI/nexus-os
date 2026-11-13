@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import MetaTrader5 as mt5
 
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
+TERMINAL = r"C:/MT5_Pending_278041169/terminal64.exe"
 OUT_JSON = Path(r"C:\Quant-Nexus-Eng\audit_v44_focused_6plus_majors.json")
 
 END_DT = datetime(2026, 11, 12, 23, 59, tzinfo=timezone.utc)
@@ -284,7 +284,7 @@ def summarize_portfolio(label: str, trade_list: list[dict]):
 
 
 def main():
-    if not mt5.initialize(path=TERMINAL, portable=False):
+    if not mt5.initialize(path=TERMINAL, portable=True):
         print(f"[-] MT5 init failed: {mt5.last_error()}")
         return
 

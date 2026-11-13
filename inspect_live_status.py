@@ -1,7 +1,7 @@
 import MetaTrader5 as mt5
 
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
-if mt5.initialize(path=TERMINAL, portable=False):
+TERMINAL = r"C:/MT5_Pending_278041169/terminal64.exe"
+if mt5.initialize(path=TERMINAL, portable=True):
     acc = mt5.account_info()
     pos = mt5.positions_get() or []
     orders = mt5.orders_get() or []
