@@ -398,7 +398,7 @@ def evaluate_alpha_matrix(symbol: str) -> dict:
 
     # Asset-calibrated multi-strategy routing (2026 backtest-verified)
     now_utc = datetime.now(timezone.utc)
-    is_btc = "BTC" in sym.upper()
+    is_btc = "BTC" in symbol.upper()
     in_btc_ny = (now_utc.weekday() < 5) and (13.0 <= (now_utc.hour + now_utc.minute / 60.0) <= 20.5)
 
     smc_res = detect_smc_ob_ifvg(opens, highs, lows, closes, poc, vah, val, atr)
@@ -406,7 +406,7 @@ def evaluate_alpha_matrix(symbol: str) -> dict:
     if is_btc and not in_btc_ny:
         smc_res["bonus"] = 0.0
     # Prioritize OB+IFVG+VP on EURUSD / GBPJPY / XAUUSD; keep SWEEP_VP primary on GBPUSD / USDJPY
-    if any(k in sym.upper() for k in ("EURUSD", "GBPJPY", "XAU")) and smc_res["bonus"] > 0:
+    if any(k in symbol.upper() for k in ("EURUSD", "GBPJPY", "XAU")) and smc_res["bonus"] > 0:
         smc_res["bonus"] += 2.0
 
     if smc_res["bonus"] > ict_bonus and ((smc_res["dir"] == "BUY" and price_delta > 0) or (smc_res["dir"] == "SELL" and price_delta < 0)):
