@@ -1,0 +1,86 @@
+import time
+import logging
+from pathlib import Path
+import MetaTrader5 as mt5
+from telegram_notifier_v43 import send_v43_alert
+
+TERMINAL_PATH = r"C:/MT5_Quant_278017866/terminal64.exe"
+LOG_PATH = Path(r"C:\Quant-Nexus-Eng\breakeven_engine.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] [BE-V4.3] %(message)s",
+    handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8")],
+)
+
+HARVESTED_TICKETS = set()
+
+def manage_positions():
+    positions = mt5.positions_get() or []
+    for p in positions:
+        if p.sl <= 0:
+            continue
+        info = mt5.symbol_info(p.symbol)
+        tick = mt5.symbol_info_tick(p.symbol)
+        if not info or not tick:
+            continue
+
+        is_buy = (p.type == mt5.POSITION_TYPE_BUY)
+        cur_price = tick.bid if is_buy else tick.ask
+        init_risk = abs(p.price_open - p.sl)
+        if init_risk <= 0:
+            continue
+
+        cur_gain = (cur_price - p.price_open) if is_buy else (p.price_open - cur_price)
+        r_mult = cur_gain / init_risk
+
+        # Tier 1: +0.85R Fast Breakeven Lock (+0.12R cushion)
+        if r_mult >= 0.85:
+            be_sl = round(p.price_open + (0.12 * init_risk) if is_buy else p.price_open - (0.12 * init_risk), info.digits)
+            needs_be = (is_buy and p.sl < be_sl) or (not is_buy and p.sl > be_sl)
+            if needs_be:
+                res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": be_sl, "tp": 0.0})
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    logging.info(f"[TIER 1 +0.85R BE LOCK] {p.symbol} #{p.ticket} SL -> {be_sl}")
+                    send_v43_alert(
+                        f"🛡️ <b>[V4.3 TIER 1: +0.85R BE LOCK]</b>\n"
+                        f"Asset: <b>{p.symbol}</b> (#{p.ticket})\n"
+                        f"Protected SL: <code>{be_sl}</code> (+0.12R cushion)"
+                    )
+
+        # Tier 2: +1.60R 50% Rapid Harvest + +1.0R Floor Ratchet (leaves remaining 50% uncapped for full session trend!)
+        if r_mult >= 1.60 and p.ticket not in HARVESTED_TICKETS and p.volume >= (info.volume_min * 2):
+            close_vol = round(p.volume * 0.5, 2)
+            close_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
+            res = mt5.order_send({
+                "action": mt5.TRADE_ACTION_DEAL,
+                "position": p.ticket,
+                "symbol": p.symbol,
+                "volume": close_vol,
+                "type": close_type,
+                "price": cur_price,
+                "deviation": 30,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+                "comment": "NEXUS_V43_T2_HARVEST",
+            })
+            if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                HARVESTED_TICKETS.add(p.ticket)
+                ratch_sl = round(p.price_open + (1.00 * init_risk) if is_buy else p.price_open - (1.00 * init_risk), info.digits)
+                mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": ratch_sl, "tp": 0.0})
+                logging.info(f"[TIER 2 +1.60R HARVEST] {p.symbol} #{p.ticket} banked {close_vol}L | Uncapped Runner Floor SL -> {ratch_sl}")
+                send_v43_alert(
+                    f"💰 <b>[V4.3 TIER 2: +1.60R 50% HARVEST]</b>\n"
+                    f"Asset: <b>{p.symbol}</b> (#{p.ticket})\n"
+                    f"Banked: <b>{close_vol}L</b> @ <code>{cur_price}</code>\n"
+                    f"Uncapped Runner Floor SL: <code>{ratch_sl}</code> (+1.00R locked)"
+                )
+
+if __name__ == "__main__":
+    if mt5.initialize(path=TERMINAL_PATH, portable=False):
+        logging.info("Breakeven & Uncapped Session Runner Engine V4.3 Online.")
+        while True:
+            try:
+                manage_positions()
+            except Exception as e:
+                logging.error(f"BE loop error: {e}")
+            time.sleep(2)

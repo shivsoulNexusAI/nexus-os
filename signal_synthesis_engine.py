@@ -20,7 +20,7 @@ SMT_PAIRS = {
 }
 
 class SignalSynthesisEngine:
-    def __init__(self, terminal_path: str = r"C:\MT5_Quant_278017866\terminal64.exe"):
+    def __init__(self, terminal_path: str = r"C:\MT5_Quant_278061453\terminal64.exe"):
         self.terminal_path = terminal_path
 
     def _ensure_mt5(self) -> bool:

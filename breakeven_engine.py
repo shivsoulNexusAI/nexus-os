@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 QUANT-NEXUS RAPID PROFIT PROTECTION & DYNAMIC TRAILING ENGINE
-Dedicated to Account #278041169 (Silo 2) & #278017866 (Silo 1)
+Dedicated to Account #278062039 (Silo 2) & #278062038 (Silo 1)
 """
 import os
 import sys
@@ -28,15 +28,15 @@ log = logging.getLogger("BreakevenEngine")
 SILOS = [
     {
         "name": "Silo 2 (Nexus AI Bot)",
-        "login": 278041169,
+        "login": 278062039,
         "password": "H@ngkook3695",
         "server": "Exness-MT5Trial5",
-        "path": r"C:/MT5_Quant_278017866/terminal64.exe",
+        "path": r"C:/MT5_Quant_278061453/terminal64.exe",
         "portable": False
     },
     {
         "name": "Silo 1 (Silver Bullet)",
-        "login": 278017866,
+        "login": 278062038,
         "password": "H@ngkook3695",
         "server": "Exness-MT5Trial5",
         "path": r"C:/Program Files/MetaTrader 5 - Apex Satellite/terminal64.exe",

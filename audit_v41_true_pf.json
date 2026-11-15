@@ -1,0 +1,43 @@
+{
+    "portfolio_pf": 1.0,
+    "net_pnl": 11.23,
+    "max_dd": 661.8,
+    "assets": {
+        "XAUUSD": {
+            "trades": 199,
+            "net_pnl": 541.45,
+            "win_rate": 54.3,
+            "pf": 1.37,
+            "t2_harvests": 59,
+            "avg_win": 18.68,
+            "avg_loss": -16.22
+        },
+        "US30": {
+            "trades": 217,
+            "net_pnl": -107.46,
+            "win_rate": 42.4,
+            "pf": 0.91,
+            "t2_harvests": 43,
+            "avg_win": 11.75,
+            "avg_loss": -9.51
+        },
+        "BTCUSD": {
+            "trades": 191,
+            "net_pnl": 53.61,
+            "win_rate": 49.7,
+            "pf": 1.04,
+            "t2_harvests": 47,
+            "avg_win": 16.14,
+            "avg_loss": -15.41
+        },
+        "GBPUSD": {
+            "trades": 207,
+            "net_pnl": -476.36,
+            "win_rate": 45.4,
+            "pf": 0.72,
+            "t2_harvests": 47,
+            "avg_win": 13.19,
+            "avg_loss": -15.19
+        }
+    }
+}

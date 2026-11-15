@@ -1,0 +1,17 @@
+from pathlib import Path
+
+script_path = Path(r"C:\Quant-Nexus-Eng\silver_bullet_daemon.py")
+lines = script_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+
+print("=" * 80)
+print("INSPECTING CONFLUENCE & ORDER DISPATCH IN silver_bullet_daemon.py")
+print("=" * 80)
+
+for idx, line in enumerate(lines):
+    if "CONFLUENCE VERIFIED" in line:
+        start = max(0, idx - 5)
+        end = min(len(lines), idx + 35)
+        for i in range(start, end):
+            print(f"{i+1:4d}: {lines[i]}")
+        break
+print("=" * 80)

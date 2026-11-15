@@ -1,0 +1,35 @@
+{
+    "last_fetched": "2026-11-12T07:00:02.724124+00:00",
+    "events": [
+        {
+            "title": "Core CPI m/m",
+            "currency": "USD",
+            "impact": "High",
+            "date": "2026-11-10T08:30:00-05:00"
+        },
+        {
+            "title": "CPI m/m",
+            "currency": "USD",
+            "impact": "High",
+            "date": "2026-11-10T08:30:00-05:00"
+        },
+        {
+            "title": "GDP m/m",
+            "currency": "GBP",
+            "impact": "High",
+            "date": "2026-11-12T02:00:00-05:00"
+        },
+        {
+            "title": "Core PPI m/m",
+            "currency": "USD",
+            "impact": "High",
+            "date": "2026-11-13T08:30:00-05:00"
+        },
+        {
+            "title": "PPI m/m",
+            "currency": "USD",
+            "impact": "High",
+            "date": "2026-11-13T08:30:00-05:00"
+        }
+    ]
+}

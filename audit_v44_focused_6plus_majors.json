@@ -1,0 +1,129 @@
+{
+  "rankings": [
+    {
+      "symbol": "XAUUSD",
+      "trades": 42,
+      "net_pnl": 733.86,
+      "win_rate": 78.6,
+      "pf": 6.33,
+      "t2_harvests": 25,
+      "max_dd": 19.89,
+      "avg_win": 26.41,
+      "avg_loss": -15.3,
+      "base": "XAUUSD"
+    },
+    {
+      "symbol": "BTCUSD",
+      "trades": 42,
+      "net_pnl": 619.14,
+      "win_rate": 71.4,
+      "pf": 4.02,
+      "t2_harvests": 24,
+      "max_dd": 32.49,
+      "avg_win": 27.47,
+      "avg_loss": -17.07,
+      "base": "BTCUSD"
+    },
+    {
+      "symbol": "US30",
+      "trades": 173,
+      "net_pnl": 1230.1,
+      "win_rate": 57.8,
+      "pf": 2.69,
+      "t2_harvests": 78,
+      "max_dd": 76.06,
+      "avg_win": 19.58,
+      "avg_loss": -9.98,
+      "base": "US30"
+    },
+    {
+      "symbol": "EURUSD",
+      "trades": 56,
+      "net_pnl": 872.84,
+      "win_rate": 62.5,
+      "pf": 4.57,
+      "t2_harvests": 33,
+      "max_dd": 47.82,
+      "avg_win": 31.93,
+      "avg_loss": -11.66,
+      "base": "EURUSD"
+    },
+    {
+      "symbol": "GBPUSD",
+      "trades": 65,
+      "net_pnl": 1250.03,
+      "win_rate": 67.7,
+      "pf": 5.06,
+      "t2_harvests": 41,
+      "max_dd": 37.06,
+      "avg_win": 35.4,
+      "avg_loss": -14.65,
+      "base": "GBPUSD"
+    },
+    {
+      "symbol": "USDJPY",
+      "trades": 14,
+      "net_pnl": 134.24,
+      "win_rate": 71.4,
+      "pf": 3.9,
+      "t2_harvests": 8,
+      "max_dd": 24.04,
+      "avg_win": 18.06,
+      "avg_loss": -11.59,
+      "base": "USDJPY"
+    },
+    {
+      "symbol": "USDCAD",
+      "trades": 61,
+      "net_pnl": 601.44,
+      "win_rate": 62.3,
+      "pf": 4.2,
+      "t2_harvests": 38,
+      "max_dd": 36.18,
+      "avg_win": 20.77,
+      "avg_loss": -8.17,
+      "base": "USDCAD"
+    },
+    {
+      "symbol": "AUDUSD",
+      "trades": 7,
+      "net_pnl": 68.54,
+      "win_rate": 57.1,
+      "pf": 3.27,
+      "t2_harvests": 3,
+      "max_dd": 30.09,
+      "avg_win": 24.68,
+      "avg_loss": -10.06,
+      "base": "AUDUSD"
+    },
+    {
+      "symbol": "USDCHF",
+      "trades": 43,
+      "net_pnl": 1117.02,
+      "win_rate": 65.1,
+      "pf": 7.73,
+      "t2_harvests": 28,
+      "max_dd": 19.6,
+      "avg_win": 45.82,
+      "avg_loss": -11.07,
+      "base": "USDCHF"
+    },
+    {
+      "symbol": "NZDUSD",
+      "trades": 3,
+      "net_pnl": 25.86,
+      "win_rate": 66.7,
+      "pf": 2.71,
+      "t2_harvests": 2,
+      "max_dd": 15.13,
+      "avg_win": 20.5,
+      "avg_loss": -15.13,
+      "base": "NZDUSD"
+    }
+  ],
+  "top3_fx": [
+    "USDCHF",
+    "GBPUSD",
+    "EURUSD"
+  ]
+}

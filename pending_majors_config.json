@@ -1,10 +1,10 @@
-{
+﻿{
     "authorized_chat_id": "5279761713",
     "strategy": "Majors Breakout Grid & BTC",
     "chat_id": "5279761713",
     "terminal_id": "T2",
     "bot_name": "Nexus AI Bot",
-    "bot_token": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",
+    "": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",
     "symbols": [
         "EURUSD",
         "GBPUSD",

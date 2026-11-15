@@ -1,4 +1,4 @@
-﻿r"""
+r"""
 QuantNexus Asynchronous Telegram Telemetry & Remote Kill-Switch Module
 Directory: C:\Quant-Nexus-Eng\telegram_alpha_bot.py
 """
@@ -16,8 +16,8 @@ import MetaTrader5 as mt5
 
 CONFIG_FILE = Path(r"C:\Quant-Nexus-Eng\telegram_config.json")
 KILL_SWITCH_FLAG = Path(r"C:\Quant-Nexus-Eng\emergency_halt.flag")
-MT5_PATH = r"C:\MT5_Quant_278017866\terminal64.exe"
-ACCOUNT = 278017866
+MT5_PATH = r"C:\MT5_Quant_278061453\terminal64.exe"
+ACCOUNT = 278062038
 
 log = logging.getLogger("TelegramAlphaBot")
 
@@ -51,7 +51,7 @@ def send_telegram_alert_sync(message: str):
         log.warning("Telegram dispatch failed: %s", e)
 
 async def emergency_flatten_positions():
-    """Emergency protocol: Closes all open market orders on Account 278017866."""
+    """Emergency protocol: Closes all open market orders on Account 278062038."""
     if not mt5.initialize(path=MT5_PATH):
         return "❌ MT5 connection failed during emergency flatten."
     
@@ -63,7 +63,7 @@ async def emergency_flatten_positions():
     positions = mt5.positions_get()
     if not positions:
         mt5.shutdown()
-        return "ℹ️ No open positions found on Account #278017866."
+        return "ℹ️ No open positions found on Account #278062038."
 
     closed_count = 0
     for p in positions:
@@ -78,7 +78,7 @@ async def emergency_flatten_positions():
             "type": close_type,
             "price": price,
             "deviation": 20,
-            "magic": 278017866,
+            "magic": 278062038,
             "comment": "TELEGRAM_EMERGENCY_HALT",
             "type_time": mt5.ORDER_TIME_GTC,
             "type_filling": mt5.ORDER_FILLING_IOC,
@@ -123,7 +123,7 @@ async def run_inbound_listener():
 
                         # Command routing
                         if text == "/status":
-                            status_msg = "🟢 <b>QuantNexus System Nominal</b>\nAccount: #278017866\nMode: LIVE-ARMED\nKill-Switch: "
+                            status_msg = "🟢 <b>QuantNexus System Nominal</b>\nAccount: #278062038\nMode: LIVE-ARMED\nKill-Switch: "
                             status_msg += "🛑 ACTIVE (HALTED)" if KILL_SWITCH_FLAG.exists() else "✅ CLEAR (ARMED)"
                             send_telegram_alert_sync(status_msg)
 

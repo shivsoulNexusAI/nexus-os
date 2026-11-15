@@ -1,0 +1,114 @@
+{
+    "baseline": {
+        "label": "V2.1_BASELINE (No Micro/Whipsaw/News Shield)",
+        "trades": 53131,
+        "win_rate_pct": 30.46,
+        "net_pnl": -83605.22,
+        "profit_factor": 0.34,
+        "avg_win": 2.69,
+        "avg_loss": -3.44,
+        "max_dd_usd": 83589.0,
+        "by_year": {
+            "2025": {
+                "count": 9358,
+                "sum": -1888.58
+            },
+            "2026": {
+                "count": 43773,
+                "sum": -81716.64
+            }
+        },
+        "by_symbol": {
+            "BTCUSD": {
+                "count": 8597,
+                "sum": -70337.41
+            },
+            "EURUSD": {
+                "count": 9189,
+                "sum": -498.87
+            },
+            "GBPUSD": {
+                "count": 9000,
+                "sum": -734.34
+            },
+            "US30": {
+                "count": 8884,
+                "sum": -2492.38
+            },
+            "USDJPY": {
+                "count": 9122,
+                "sum": -423.33
+            },
+            "XAUUSD": {
+                "count": 8339,
+                "sum": -9118.89
+            }
+        },
+        "by_setup": {
+            "BREAKOUT_BUY": {
+                "count": 26560,
+                "sum": -40664.29
+            },
+            "BREAKOUT_SELL": {
+                "count": 26571,
+                "sum": -42940.92
+            }
+        }
+    },
+    "upgraded_v31": {
+        "label": "V3.1_UPGRADED (Micro VPOC/Delta + DII Fade + Shields)",
+        "trades": 29783,
+        "win_rate_pct": 33.95,
+        "net_pnl": -26208.28,
+        "profit_factor": 0.41,
+        "avg_win": 1.8,
+        "avg_loss": -2.26,
+        "max_dd_usd": 26192.38,
+        "by_year": {
+            "2025": {
+                "count": 5652,
+                "sum": -905.31
+            },
+            "2026": {
+                "count": 24131,
+                "sum": -25302.96
+            }
+        },
+        "by_symbol": {
+            "BTCUSD": {
+                "count": 2388,
+                "sum": -19538.53
+            },
+            "EURUSD": {
+                "count": 6366,
+                "sum": -374.54
+            },
+            "GBPUSD": {
+                "count": 6308,
+                "sum": -426.18
+            },
+            "US30": {
+                "count": 5455,
+                "sum": -1376.15
+            },
+            "USDJPY": {
+                "count": 6354,
+                "sum": -223.93
+            },
+            "XAUUSD": {
+                "count": 2912,
+                "sum": -4268.95
+            }
+        },
+        "by_setup": {
+            "BREAKOUT_BUY": {
+                "count": 14686,
+                "sum": -11772.2
+            },
+            "BREAKOUT_SELL": {
+                "count": 15097,
+                "sum": -14436.08
+            }
+        }
+    }
+}

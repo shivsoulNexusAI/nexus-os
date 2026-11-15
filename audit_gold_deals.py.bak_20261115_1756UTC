@@ -1,0 +1,17 @@
+from datetime import datetime, timedelta
+import MetaTrader5 as mt5
+
+TERMINAL = r"C:/MT5_HFT_278041671/terminal64.exe"
+if mt5.initialize(path=TERMINAL, portable=False, timeout=10000):
+    deals = mt5.history_deals_get(datetime.now() - timedelta(hours=6), datetime.now()) or []
+    print("=" * 80)
+    print(f"RECENT CLOSED DEALS: ACCOUNT #278041671 ({len(deals)} deals found)")
+    print("=" * 80)
+    for d in deals:
+        t = datetime.fromtimestamp(d.time).strftime("%H:%M:%S")
+        entry_type = "IN" if d.entry == 0 else ("OUT" if d.entry == 1 else "IN/OUT")
+        print(f"[{t}] Deal #{d.ticket} | Order #{d.order} | {d.symbol} {d.volume:.2f}L @ {d.price:.2f} | PnL: ${d.profit:+,.2f} | Fee: ${d.commission:.2f} | Type: {entry_type} | Comment: {d.comment}")
+    mt5.shutdown()
+    print("=" * 80)
+else:
+    print("[-] HFT Terminal init failed.")

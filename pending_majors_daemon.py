@@ -1,6 +1,6 @@
 r"""
-Nexus AI Bot Telemetry Daemon for Terminal 2 (#278041169)
-Target Account : 278041169 (Exness-MT5Trial5)
+Nexus AI Bot Telemetry Daemon for Terminal 2 (#278062039)
+Target Account : 278062039 (Exness-MT5Trial5)
 Terminal Path  : C:\MT5_Pending_278041169\terminal64.exe
 Assets         : EURUSD, GBPUSD, USDJPY, US30
 Telemetry Pipe : Dedicated @Nexus_AIk_bot (8578781048)
@@ -27,8 +27,8 @@ logging.basicConfig(
 )
 log = logging.getLogger("PendingMajors")
 
-MT5_PATH = r"C:/MT5_Quant_278017866/terminal64.exe"
-ACCOUNT = 278041169
+MT5_PATH = r"C:/MT5_Pending_278041169/terminal64.exe"
+ACCOUNT = 278062039
 POLL_INTERVAL = 2.0
 
 tracked_positions = set()
@@ -54,7 +54,7 @@ def send_nexus_ai_alert(message: str):
         log.warning("Telegram dispatch error: %s", e)
 
 def init_terminal() -> bool:
-    if not mt5.initialize(path=r"C:/MT5_Quant_278017866/terminal64.exe", portable=False):
+    if not mt5.initialize(path=r"C:/MT5_Quant_278061453/terminal64.exe", portable=False):
         log.error("Failed to initialize terminal at %s | Error: %s", MT5_PATH, mt5.last_error())
         return False
 
@@ -86,7 +86,7 @@ def audit_book_and_notify():
                          p.symbol, side, p.volume, p.price_open, p.ticket)
                 
                 msg = (
-                    f"👑 <b>NEXUS AI BOT // ORDER FILLED</b>\n\n"
+                    f"рџ‘‘ <b>NEXUS AI BOT // ORDER FILLED</b>\n\n"
                     f"<b>Account:</b> <code>#{ACCOUNT}</code>\n"
                     f"<b>Asset:</b> <code>{p.symbol}</code> | <b>Side:</b> {side}\n"
                     f"<b>Volume:</b> <code>{p.volume}</code> lots\n"
@@ -113,7 +113,7 @@ if __name__ == "__main__":
         tracked_positions = {p.ticket for p in positions}
 
     online_msg = (
-        f"👑🔥 <b>NEXUS AI BOT ONLINE</b>\n\n"
+        f"рџ‘‘рџ”Ґ <b>NEXUS AI BOT ONLINE</b>\n\n"
         f"<b>Account:</b> <code>#{ACCOUNT}</code> (Exness-MT5Trial5)\n"
         f"<b>Balance:</b> <code>${acc.balance:.2f}</code> | <b>Equity:</b> <code>${acc.equity:.2f}</code>\n"
         f"<b>Active Trades:</b> <code>{len(positions) if positions else 0}</code>\n"
@@ -130,3 +130,4 @@ if __name__ == "__main__":
         log.info("Stopped by operator.")
     finally:
         mt5.shutdown()
+

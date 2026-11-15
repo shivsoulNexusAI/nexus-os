@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 import sqlite3
 from pathlib import Path
 
@@ -6,7 +6,7 @@ DB_PATH = Path(r"C:\Quant-Nexus-Eng\nexus_telemetry.db")
 conn = sqlite3.connect(DB_PATH)
 cur = conn.cursor()
 
-T1_LOGIN = 278017866
+T1_LOGIN = 278062038
 
 # Check schema / inspect deal execution attributes
 cur.execute("PRAGMA table_info(deals_history)")

@@ -1,246 +1,891 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
-SHIVSOUL NEXUS // OMEGA APEX ELITE MATRIX v2.0 - FINAL PRODUCTION POLISH
-- Dynamic Bias Indicators (🟢 BUY / 🔴 SELL / ⚪ FLAT)
-- Asset-Normalized Pip Delta Scaling
-- Monospace Column Alignment
+SHIVSOUL NEXUS // OMEGA APEX ELITE MATRIX v2.5 - TERMINAL 1 (#278062038) AUTONOMOUS MASTER
+- Portable MT5 IPC Handshake (portable=True) locked to #278062038
+- 60-Second Microstructure Tick Flow (TAPE + QUOTE Z-Score) & Particle Erosion Matrix
+- Autonomous Market Execution on >= 75% / 80% Confidence Gate + Tiered threshold_config.json
+- Auto-Breakeven Lock at +1.0R (+0.10R buffer) & Two-Step Telegram /flatten
 """
-import sys
-import os
-
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-if sys.stderr.encoding != 'utf-8':
-    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
-
-import time
-import json
-import logging
-from datetime import datetime, timezone
+import random
+import os, sys, re, json, math, time, socket, asyncio, logging, html
+from collections import Counter
+from logging.handlers import RotatingFileHandler
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
+
+import numpy as np
 import httpx
 import MetaTrader5 as mt5
 
-CONFIG_FILE = Path(r"C:\Quant-Nexus-Eng\telegram_config.json")
-LOG_FILE = Path(r"C:\Quant-Nexus-Eng\quantum_institutional_pro.log")
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(str(LOG_FILE), encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-log = logging.getLogger("OmegaApexPro")
+CFG_DIR = Path(os.getenv("NEXUS_CFG_DIR", r"C:\Quant-Nexus-Eng"))
+_TOKEN_RE = re.compile(r"^\d{6,}:[A-Za-z0-9_-]{30,}$")
 
-MT5_PATH = r"C:\MT5_Quant_278017866\terminal64.exe"
-ACCOUNT = 278017866
-CADENCE = 60.0
+def _dig(d, path):
+    for k in path.split("."):
+        if not isinstance(d, dict) or k not in d:
+            return None
+        d = d[k]
+    return d
 
-FLEET_SYMBOLS = [
+def load_credentials():
+    tok = os.getenv("TG_TOKEN", "")
+    chat = os.getenv("TG_CHAT_ID", "")
+    if not (tok and chat):
+        for name in ("t1_telegram_config.json", "telegram_config.json", "master_telegram_trio.json", "cadence_anchor.json"):
+            target = CFG_DIR / name
+            if not target.exists():
+                continue
+            try:
+                cfg = json.loads(target.read_text(encoding="utf-8-sig"))
+            except (OSError, ValueError):
+                continue
+            if not tok:
+                for k in ("bot_token", "token", "quant_alert_bot.token", "cadence_bot.token", "bots.cadence.token", "nexus_ai_bot.token"):
+                    v = _dig(cfg, k)
+                    if v and _TOKEN_RE.match(str(v)):
+                        tok = str(v)
+                        break
+            if not chat:
+                for k in ("authorized_chat_id", "chat_id", "quant_alert_bot.chat_id", "bots.cadence.chat_id", "nexus_ai_bot.chat_id"):
+                    v = _dig(cfg, k)
+                    if v and re.match(r"^-?\d+$", str(v)):
+                        chat = str(v)
+                        break
+    if not _TOKEN_RE.match(tok):
+        sys.exit("No valid TG_TOKEN found in environment or configuration files.")
+    if not re.match(r"^-?\d+$", str(chat)):
+        sys.exit("No valid TG_CHAT_ID found in environment or configuration files.")
+    return tok, int(chat)
+
+TOKEN, CHAT_ID = load_credentials()
+SUFFIX = os.environ.get("SYMBOL_SUFFIX", "")
+FLEET = [
     ("BTCUSD", "M15"),
     ("XAUUSD", "M5"),
     ("EURUSD", "M15"),
     ("GBPUSD", "M15"),
     ("USDJPY", "M5"),
-    ("GBPJPY", "M15")
+    ("GBPJPY", "M15"),
 ]
+TF_MIN = {"M5": 5, "M15": 15}
+CADENCE, MAX_FLEET = 60.0, 4
+CB_DRAWDOWN = float(os.environ.get("CB_DRAWDOWN", "100"))
+RISK_FIXED_MAX = 15.00
+AUTO_EXECUTE = os.environ.get("AUTO_EXECUTE", "1") == "1"
+MAX_SPREAD_FRAC, MARGIN_USE_CAP = 0.25, 0.60
+SYM_COOLDOWN_SEC = 180.0
+MAGIC = 750075
+TARGET_ACCOUNT = 278062038
+TARGET_MT5_PATH = r"C:\MT5_Quant_278061453\terminal64.exe"
 
-def load_telegram_cfg():
-    if not CONFIG_FILE.exists():
-        return None, None
-    try:
-        data = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        return data.get("bot_token"), data.get("authorized_chat_id")
-    except Exception:
-        return None, None
+MIN_TRADES, MIN_SAMPLE, QUOTE_Z_DAMP, Z_DIR_MIN = 15, 10, 0.5, 0.75
+MAX_TICKS = 200_000
+ANCHOR_FILE = str(CFG_DIR / "cadence_anchor.json")
+STATE_FILE = str(CFG_DIR / "qip_state.json")
+LOG_FILE = str(CFG_DIR / "quantum_institutional_pro.log")
+LOCK_PORT, MT5_SNAPSHOT_TIMEOUT = 48212, 15.0
+GLOBES = ['🌍', '🌎', '🌏', '🌐']
+SEP = "\u2501" * 28
 
-def send_or_edit_anchor(text: str, anchor_id: int = None) -> int:
-    token, chat_id = load_telegram_cfg()
-    if not token or not chat_id:
-        return None
-    
-    keyboard = {
-        "inline_keyboard": [
-            [
-                {"text": "🚨 Kill T1", "callback_data": "KILL_T1"},
-                {"text": "🚨 Kill T2", "callback_data": "KILL_T2"},
-                {"text": "🚨 Kill T3", "callback_data": "KILL_T3"}
-            ],
-            [
-                {"text": "🔒 Break-Even All", "callback_data": "BE_ALL"},
-                {"text": "🔄 Resync Fleet", "callback_data": "SYNC"}
-            ]
-        ]
-    }
+log = logging.getLogger("qip")
+log.setLevel(logging.INFO)
+_fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
+for _h in (RotatingFileHandler(LOG_FILE, maxBytes=2_000_000, backupCount=3, encoding="utf-8"), logging.StreamHandler(sys.stdout)):
+    _h.setFormatter(_fmt)
+    log.addHandler(_h)
+for _n in ("httpx", "httpcore"):
+    logging.getLogger(_n).setLevel(logging.WARNING)
 
-    headers = {"Content-Type": "application/json; charset=utf-8"}
+CCY = {"USD","EUR","GBP","JPY","CHF","CAD","AUD","NZD","SEK","NOK","DKK","PLN","MXN","ZAR","SGD","HKD","TRY","CNH","CZK","HUF"}
+METALS = {"XAU","XAG","XPT","XPD"}
+ENERGY = {"XTI","XBR","XNG","USOIL","UKOIL"}
+CRYPTO = {"BTC","ETH","LTC","XRP","SOL","BNB","ADA","DOGE","DOT","LINK","BCH"}
+INDICES = {"US30","US500","SPX500","NAS100","USTEC","US100","GER40","DE40","DAX40","UK100","JP225","FRA40","EU50","AUS200","HK50"}
 
-    with httpx.Client(timeout=10.0) as client:
-        if anchor_id:
-            edit_url = f"https://api.telegram.org/bot{token}/editMessageText"
-            payload = {
-                "chat_id": chat_id,
-                "message_id": anchor_id,
-                "text": text,
-                "parse_mode": "HTML",
-                "reply_markup": keyboard
-            }
-            try:
-                r = client.post(edit_url, json=payload, headers=headers)
-                if r.status_code == 200:
-                    return anchor_id
-            except Exception as e:
-                log.warning("Edit failed: %s", e)
+def classify(sym):
+    s = sym.upper()
+    if s in INDICES: return "INDEX", s, None
+    if len(s) >= 6 and s[-3:] in CCY:
+        b, q = s[:-3], s[-3:]
+        if b in CCY: return "FX", b, q
+        if b in METALS: return "METAL", b, q
+        if b in ENERGY: return "ENERGY", b, q
+        if b in CRYPTO: return "CRYPTO", b, q
+    return "OTHER", s, None
 
-        # Fallback to dispatching new anchor message
-        send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-        payload = {
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML",
-            "reply_markup": keyboard
-        }
-        try:
-            r = client.post(send_url, json=payload, headers=headers)
-            if r.status_code == 200:
-                res_data = r.json()
-                new_id = res_data["result"]["message_id"]
-                return new_id
-        except Exception as e:
-            log.error("Send new anchor failed: %s", e)
+def norm_sym(raw):
+    s = raw.upper()
+    if SUFFIX and s.endswith(SUFFIX.upper()):
+        s = s[:-len(SUFFIX)]
+    if classify(s)[0] == "OTHER":
+        for b, _ in FLEET:
+            if s.startswith(b):
+                return b
+    return s
+
+def legs(sym, side):
+    sg = 1 if side in ("BUY", "LONG") else -1
+    cls, b, q = classify(sym)
+    if cls == "INDEX": return {"IDX": sg}
+    if q: return {b: sg, q: -sg}
+    return {b: sg}
+
+def corr_check(sym, side, held):
+    cnt = Counter()
+    for p in held:
+        for leg, sg in legs(p["sym"], p["side"]).items():
+            cnt[(leg, sg)] += 1
+    for leg, sg in legs(sym, side).items():
+        lim = 1 if leg == "IDX" else 2 if leg == "USD" else 1
+        if cnt[(leg, sg)] >= lim:
+            return f"{'+' if sg > 0 else '-'}{leg} limit ({lim})"
     return None
 
-def compute_microstructure(symbol: str, tf_str: str):
-    tf = mt5.TIMEFRAME_M15 if tf_str == "M15" else mt5.TIMEFRAME_M5
-    rates = mt5.copy_rates_from_pos(symbol, tf, 0, 14)
-    if rates is None or len(rates) < 10:
-        return "+0", "+0.00", 50, "FLAT", "⚪"
-
-    closes = [r['close'] for r in rates]
-    highs = [r['high'] for r in rates]
-    lows = [r['low'] for r in rates]
-
-    p_range = max(highs) - min(lows) or 1.0
-    net = closes[-1] - closes[0]
-    dii = net / p_range
-
-    # Asset-calibrated delta calculation
-    diff = closes[-1] - closes[-2]
-    if "BTC" in symbol:
-        delta_pips = int(diff)            # $1 increments for BTC
-    elif "XAU" in symbol:
-        delta_pips = int(diff * 10)       # 10c increments for Gold
-    elif "JPY" in symbol:
-        delta_pips = int(diff * 100)      # Standard pips for JPY
-    else:
-        delta_pips = int(diff * 10000)    # Standard pips for FX Majors (EUR, GBP)
-
-    score = int(50 + (dii * 40))
-    score = max(25, min(85, score))
-
-    # Dynamic status indicators
-    if dii >= 0.12:
-        state, dot = "BUY ", "🟢"
-    elif dii <= -0.12:
-        state, dot = "SELL", "🔴"
-    else:
-        state, dot = "FLAT", "⚪"
-
-    return f"{delta_pips:+4d}", f"{dii:+.02f}", score, state, dot
-
-def build_matrix_dashboard():
-    acc = mt5.account_info()
-    positions = mt5.positions_get() or []
-
-    total_profit = sum(p.profit for p in positions)
-    active_symbols = {p.symbol for p in positions}
-
-    lines = [
-        "🔱 <b>SHIVSOUL NEXUS / OMEGA APEX ELITE MATRIX</b>",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        f"<b>NAV</b>   <code>${acc.equity:,.2f}</code>",
-        f"<b>Float</b> <code>{total_profit:+.2f}</code>",
-        f"<b>FreeM</b> <code>${acc.margin_free:,.2f}</code> | Fleet {len(positions)}/6",
-        "<b>OMEGA-APEX-v2.0</b> | <code>100% AUTONOMOUS</code>",
-        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
-        "⚡ <b>LIVE MARKET EXECUTIONS (LOCKED)</b>"
-    ]
-
-    if positions:
-        for p in positions:
-            side = "BUY" if p.type == mt5.ORDER_TYPE_BUY else "SELL"
-            lines.append(f"<b>{p.symbol}</b> • {side} {p.volume}L")
-            lines.append(f"Float <code>{p.profit:+.2f}</code> | Open <code>{p.price_open}</code>")
-    else:
-        lines.append("<i>Standing by — Zero floating exposure</i>")
-
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-        # Check Macro Shock Lockout
-    news_file = Path(r"C:\Quant-Nexus-Eng\news_lockout.json")
-    if news_file.exists():
-        try:
-            n_state = json.loads(news_file.read_text(encoding="utf-8"))
-            if n_state.get("quarantine_active"):
-                th = n_state.get("active_threats", [{}])[0]
-                lines.append(f"🎯 <b>ALPHA TRIGGER:</b> ⚠️ <code>NEWS LOCKOUT [{th.get('currency')}]</code>")
-            elif n_state.get("upcoming_events"):
-                up = n_state.get("upcoming_events", [{}])[0]
-                lines.append(f"🎯 <b>ALPHA TRIGGER:</b> Edge Surveillance | <code>{up.get('currency')} in {up.get('mins_away')}m</code>")
-            else:
-                lines.append("🎯 <b>ALPHA TRIGGER:</b> Matrix Balanced | Awaiting Edge")
-        except Exception:
-            lines.append("🎯 <b>ALPHA TRIGGER:</b> Matrix Balanced | Awaiting Edge")
-    else:
-        lines.append("🎯 <b>ALPHA TRIGGER:</b> Matrix Balanced | Awaiting Edge")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("📡 <b>MICROSTRUCTURE SCANNER FLEET (M15+M5 DUAL)</b>")
-
-    for idx, (sym, tf) in enumerate(FLEET_SYMBOLS, start=1):
-        delta_val, dii_val, score, state, dot = compute_microstructure(sym, tf)
-        tag = "🔒 [LCK]" if sym in active_symbols else "⚡ [HUNT]"
-        lines.append(f"#{idx} <b>{sym}</b> {dot} <code>{state} [{tf:<3}] {score}%</code>")
-        lines.append(f"   <code>Δ:{delta_val:>5}  DII:{dii_val}</code> {tag}")
-
-    now_utc = datetime.now(timezone.utc)
-    utc_clock = now_utc.strftime("%H:%M:%S UTC")
-    lines.append("━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
-    lines.append("🌎 <b>LIVE 60S CADENCE ACTIVE</b>")
-    lines.append(f"⏱️ <code>{utc_clock}</code> | 🇬🇧 <code>LDN-NY (ASIA -8h15m)</code> | <code>75%</code>")
-
-    return "\n".join(lines)
-
-def run():
-    log.info("Launching Polished ShivSoul Nexus / Omega Apex Matrix...")
-    if not mt5.initialize(path=MT5_PATH):
-        log.error("MT5 init failure: %s", MT5_PATH)
-        return
-
-    anchor_file = Path(r"C:\Quant-Nexus-Eng\cadence_anchor.json")
-    anchor_id = None
-    if anchor_file.exists():
-        try:
-            anchor_id = json.loads(anchor_file.read_text(encoding="utf-8")).get("message_id")
-        except Exception:
-            anchor_id = None
-
-    frame = 0
+def load_asset_thresholds():
+    p = CFG_DIR / "threshold_config.json"
+    out = {}
+    if not p.exists():
+        return out
     try:
-        while True:
-            text = build_matrix_dashboard()
-            res_id = send_or_edit_anchor(text, anchor_id)
-            if res_id and res_id != anchor_id:
-                anchor_id = res_id
-                anchor_file.write_text(json.dumps({"message_id": anchor_id}), encoding="utf-8")
-                log.info("Registered new polished anchor: ID #%s", anchor_id)
-            
-            frame = (frame + 1) % 4
-            time.sleep(CADENCE)
-    except KeyboardInterrupt:
-        log.info("Engine stopped by user.")
+        data = json.loads(p.read_text(encoding="utf-8-sig"))
+        for sec in data.get("sectors", {}).values():
+            if not sec.get("enabled", True):
+                continue
+            for sym, cfg in sec.get("assets", {}).items():
+                out[sym.upper()] = {
+                    "min_edge": float(cfg.get("min_edge", 75)),
+                    "risk_percent": float(cfg.get("risk_percent", 0.75)),
+                    "tp_mult": float(cfg.get("tp_mult", 2.0)),
+                }
+    except Exception:
+        pass
+    return out
+
+def check_news_lockout():
+    p = CFG_DIR / "news_lockout.json"
+    if not p.exists():
+        return False, "Matrix Balanced | Awaiting Edge"
+    try:
+        n_state = json.loads(p.read_text(encoding="utf-8-sig"))
+        if n_state.get("quarantine_active"):
+            th = (n_state.get("active_threats") or [{}])[0]
+            return True, f"NEWS LOCKOUT [{th.get('currency', 'USD')}]"
+        if n_state.get("upcoming_events"):
+            up = (n_state.get("upcoming_events") or [{}])[0]
+            return False, f"Edge Surveillance | {up.get('currency', 'USD')} in {up.get('mins_away', '?')}m"
+    except Exception:
+        pass
+    return False, "Matrix Balanced | Awaiting Edge"
+
+def get_market_session_compact():
+    now = datetime.now(timezone.utc)
+    t_min = now.hour * 60 + now.minute
+    if 420 <= t_min < 960:
+        sess = "\U0001F1EC\U0001F1E7 LDN-NY" if 720 <= t_min < 960 else "\U0001F1EC\U0001F1E7 LDN"
+    elif 720 <= t_min < 1260:
+        sess = "\U0001F1FA\U0001F1F8 NY"
+    elif t_min >= 1320 or t_min < 480:
+        sess = "\U0001F1EF\U0001F1F5 ASIA"
+    else:
+        sess = "\U0001F310 OFF-FLOW"
+    targets = [(420, "LDN"), (720, "NY"), (1380, "ASIA")]
+    next_s = ""
+    for target_min, label in targets:
+        diff = target_min - t_min
+        if diff > 0:
+            next_s = f"{label} -{diff//60}h{diff%60:02d}m"
+            break
+    if not next_s:
+        diff = (420 + 1440) - t_min
+        next_s = f"LDN -{diff//60}h{diff%60:02d}m"
+    return f"{sess} ({next_s})"
+
+@dataclass
+class State:
+    gate: int = 75
+    flatten_armed_until: float = 0.0
+    flatten_req: bool = False
+    last_snap: dict | None = None
+    day: str = ""
+    hwm: float = 0.0
+    cb_latched: bool = False
+    frame_idx: int = 0
+    cooldowns: dict = field(default_factory=dict)
+    be_locked: set = field(default_factory=set)
+
+S = State()
+REFRESH_EVENT: asyncio.Event
+mt5_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="mt5")
+
+def _atomic_json(path, obj):
+    tmp = str(path) + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f)
+    os.replace(tmp, str(path))
+
+async def mt5_call(fn, *a, timeout=MT5_SNAPSHOT_TIMEOUT):
+    return await asyncio.wait_for(asyncio.get_running_loop().run_in_executor(mt5_pool, fn, *a), timeout)
+
+class TGError(Exception):
+    def __init__(self, code, desc, retry_after=0.0):
+        super().__init__(f"{code} {desc}")
+        self.code, self.desc, self.retry_after = code, desc, float(retry_after)
+
+class Telegram:
+    def __init__(self, token):
+        self.base = f"https://api.telegram.org/bot{token.strip()}"
+        lim = lambda n: httpx.Limits(max_connections=n, max_keepalive_connections=n, keepalive_expiry=120)
+        self.out = httpx.AsyncClient(timeout=httpx.Timeout(10.0, connect=4.0), limits=lim(4), trust_env=False)
+        self.poll = httpx.AsyncClient(timeout=httpx.Timeout(45.0, connect=5.0), limits=lim(1), trust_env=False)
+        self.block_until, self.streak = 0.0, 0
+
+    def blocked_for(self):
+        return max(0.0, self.block_until - time.monotonic())
+
+    async def call(self, method, payload, *, poll=False):
+        wait = self.blocked_for()
+        if wait > 0:
+            raise TGError(429, "rate-limit cooldown", wait)
+        url = f"{self.base}/{method.lstrip('/')}"
+        try:
+            r = await (self.poll if poll else self.out).post(url, json=payload)
+        except httpx.HTTPError as e:
+            raise TGError(0, f"network {type(e).__name__}: {e}")
+        try:
+            j = r.json()
+        except ValueError:
+            raise TGError(r.status_code, "non-JSON response")
+        if j.get("ok"):
+            self.streak = 0
+            return j["result"]
+        code, desc = j.get("error_code"), j.get("description", "")
+        if code == 429:
+            ra = float(j.get("parameters", {}).get("retry_after", 1))
+            delay = min(ra * (2 ** self.streak), 300.0)
+            self.streak = min(self.streak + 1, 6)
+            self.block_until = time.monotonic() + delay
+            log.warning("HTTP 429 - backing off %.1fs", delay)
+            raise TGError(429, desc, delay)
+        raise TGError(code, desc)
+
+    async def aclose(self):
+        await self.out.aclose()
+        await self.poll.aclose()
+
+T: Telegram
+
+def keyboard(gate):
+    a = lambda g: f"\U0001F3AF Gate {g}%" + (" \u25CF" if gate == g else "")
+    return {"inline_keyboard": [
+        [{"text": "\U0001F4CA /status", "callback_data": "cmd_status"},
+         {"text": "\U0001F4E1 /scan", "callback_data": "cmd_scan"}],
+        [{"text": a(75), "callback_data": "set_gate_75"},
+         {"text": a(80), "callback_data": "set_gate_80"},
+         {"text": "\U0001F6A8 /flatten", "callback_data": "cmd_flatten"}]
+    ]}
+
+class Anchor:
+    def __init__(self):
+        self.mid = None
+        try:
+            d = json.loads(Path(ANCHOR_FILE).read_text(encoding="utf-8-sig"))
+            if d.get("chat_id") in (CHAT_ID, None):
+                self.mid = d.get("message_id")
+        except Exception:
+            pass
+
+    async def push(self, text, kb):
+        base = {"chat_id": CHAT_ID, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True, "reply_markup": kb}
+        if self.mid:
+            try:
+                await T.call("editMessageText", {**base, "message_id": self.mid})
+                return "edited"
+            except TGError as e:
+                d = e.desc.lower()
+                if "not modified" in d:
+                    return "same"
+                if e.code == 429:
+                    return "ratelimited"
+                if not any(s in d for s in ("not found", "can't be edited", "message_id_invalid")):
+                    raise
+        m = await T.call("sendMessage", base)
+        self.mid = m["message_id"]
+        await asyncio.to_thread(_atomic_json, ANCHOR_FILE, {"chat_id": CHAT_ID, "message_id": self.mid})
+        return "sent"
+
+def ffill_nonzero(a):
+    idx = np.where(a != 0, np.arange(len(a)), 0)
+    np.maximum.accumulate(idx, out=idx)
+    return a[idx]
+
+def classify_ticks(t):
+    n = len(t)
+    if n < 2:
+        return None
+    fl = t["flags"].astype(np.int64)
+    bid, ask, last = t["bid"].astype(float), t["ask"].astype(float), t["last"].astype(float)
+    vr = t["volume_real"].astype(float) if "volume_real" in t.dtype.names else np.zeros(n)
+    v = np.where(vr > 0, vr, t["volume"].astype(float))
+    trade = ((fl & (8 | 32 | 64)) > 0) & (last > 0)
+    if int(trade.sum()) >= MIN_TRADES:
+        ix = np.flatnonzero(trade)
+        lp, bi, aa, f, w = last[ix], bid[ix], ask[ix], fl[ix], np.where(v[ix] > 0, v[ix], 1.0)
+        side = np.zeros(len(ix))
+        side[((f & 32) > 0) & ((f & 64) == 0)] = 1
+        side[((f & 64) > 0) & ((f & 32) == 0)] = -1
+        rest = side == 0
+        side[rest & (aa > 0) & (lp >= aa)] = 1
+        side[rest & (bi > 0) & (lp <= bi)] = -1
+        rem = side == 0
+        if rem.any():
+            side[rem] = ffill_nonzero(np.sign(np.diff(lp, prepend=lp[0])))[rem]
+        mode, damp = "TAPE", 1.0
+    else:
+        d = np.sign(np.diff((bid + ask) / 2.0))
+        side = d[d != 0]
+        w = np.ones(len(side))
+        mode, damp = "QUOTE", QUOTE_Z_DAMP
+    if len(side) < MIN_SAMPLE:
+        return None
+    buy, sell = float(w[side > 0].sum()), float(w[side < 0].sum())
+    tot = buy + sell
+    if tot <= 0:
+        return None
+    delta = buy - sell
+    return dict(delta=delta, dii=delta / tot, z=damp * delta / math.sqrt(float((w ** 2).sum())), mode=mode)
+
+def edge_model(fm, fo):
+    if fm is None or fo is None:
+        return 50.0, "FLAT", 0.0
+    zc = 0.65 * fm["z"] + 0.35 * fo["z"]
+    if fm["z"] * fo["z"] < 0 and min(abs(fm["z"]), abs(fo["z"])) >= 1.0:
+        return 50.0, "FLAT", zc
+    edge = min(99.0, 50.0 + 50.0 * math.tanh(abs(zc) / 3.5))
+    return edge, ("BUY" if zc >= Z_DIR_MIN else "SELL" if zc <= -Z_DIR_MIN else "FLAT"), zc
+
+def ensure_mt5():
+    acc = mt5.account_info()
+    if acc is not None and acc.login == TARGET_ACCOUNT:
+        return
+    mt5.shutdown()
+    if not mt5.initialize(path=TARGET_MT5_PATH, portable=True, timeout=15000):
+        raise RuntimeError(f"mt5.initialize(portable=True) failed on {TARGET_MT5_PATH}: {mt5.last_error()}")
+    acc = mt5.account_info()
+    if acc is None or acc.login != TARGET_ACCOUNT:
+        raise RuntimeError(f"MT5 bound to wrong account ({getattr(acc, 'login', None)} != {TARGET_ACCOUNT})")
+
+def get_filling_mode(info):
+    fm = getattr(info, "filling_mode", 0)
+    if fm & 1:
+        return mt5.ORDER_FILLING_FOK
+    if fm & 2:
+        return mt5.ORDER_FILLING_IOC
+    return mt5.ORDER_FILLING_RETURN
+
+def fetch_ticks(sym, end_epoch, window_sec):
+    end_epoch, start = int(end_epoch), int(end_epoch) - int(window_sec)
+    t = mt5.copy_ticks_from(sym, start, MAX_TICKS, mt5.COPY_TICKS_ALL)
+    if t is None or len(t) == 0:
+        t = mt5.copy_ticks_range(sym, datetime.fromtimestamp(start, timezone.utc), datetime.fromtimestamp(end_epoch + 1, timezone.utc), mt5.COPY_TICKS_ALL)
+    if t is None or len(t) == 0:
+        return None
+    t = t[t["time"] <= end_epoch + 1]
+    return t if len(t) else None
+
+def flow(sym, minutes, end_epoch):
+    t = fetch_ticks(sym, end_epoch, minutes * 60)
+    return None if t is None else classify_ticks(t)
+
+def atr15(sym, n=14):
+    r = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M15, 0, n + 1)
+    if r is None or len(r) < n + 1:
+        return 0.0
+    h, l, pc = r["high"][1:], r["low"][1:], r["close"][:-1]
+    return float(np.mean(np.maximum.reduce([h - l, np.abs(h - pc), np.abs(l - pc)])))
+
+def size_lots(info, acc, otype, sym, entry, sl, risk_pct=0.0075):
+    vmin, vmax, step = info.volume_min, info.volume_max, (info.volume_step or 0.01)
+    probe = min(max(1.0, vmin), vmax)
+    pl = mt5.order_calc_profit(otype, sym, probe, entry, sl)
+    loss1 = abs(pl) / probe if (pl is not None and pl != 0) else (abs(entry - sl) / info.trade_tick_size * info.trade_tick_value if info.trade_tick_size else 0)
+    if loss1 <= 0:
+        return 0.0, 0.0
+    budget = min(acc.equity * risk_pct, RISK_FIXED_MAX)
+    lots = min(max(math.floor(budget / loss1 / step + 1e-9) * step, vmin), vmax)
+    if lots * loss1 > 2 * budget:
+        return 0.0, 0.0
+    return round(lots, 8), round(lots * loss1, 2)
+
+def manage_t1_positions():
+    positions = mt5.positions_get() or []
+    for p in positions:
+        if p.ticket in S.be_locked or p.sl == 0:
+            continue
+        info = mt5.symbol_info(p.symbol)
+        tk = mt5.symbol_info_tick(p.symbol)
+        if not (info and tk):
+            continue
+        is_buy = p.type == mt5.POSITION_TYPE_BUY
+        sl_dist = abs(p.price_open - p.sl)
+        if sl_dist <= 0:
+            continue
+        cur_px = tk.bid if is_buy else tk.ask
+        gain = (cur_px - p.price_open) if is_buy else (p.price_open - cur_px)
+        # Lock Breakeven at +1.0R (+0.10R buffer)
+        if gain >= sl_dist * 1.00:
+            new_sl = round(p.price_open + sl_dist * 0.10, info.digits) if is_buy else round(p.price_open - sl_dist * 0.10, info.digits)
+            if (is_buy and new_sl > p.sl) or (not is_buy and new_sl < p.sl):
+                res = mt5.order_send({
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "symbol": p.symbol,
+                    "position": p.ticket,
+                    "sl": new_sl,
+                    "tp": p.tp,
+                })
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    S.be_locked.add(p.ticket)
+                    log.info("[T1 BE LOCK] #%d %s SL -> %s (+0.10R)", p.ticket, p.symbol, new_sl)
+
+def flatten_all_positions():
+    ensure_mt5()
+    positions = mt5.positions_get() or []
+    closed = 0
+    for p in positions:
+        info = mt5.symbol_info(p.symbol)
+        tk = mt5.symbol_info_tick(p.symbol)
+        if not (info and tk):
+            continue
+        is_buy = p.type == mt5.POSITION_TYPE_BUY
+        req = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": p.symbol,
+            "volume": p.volume,
+            "type": mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY,
+            "position": p.ticket,
+            "price": tk.bid if is_buy else tk.ask,
+            "deviation": 30,
+            "magic": MAGIC,
+            "comment": "T1_FLATTEN",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": get_filling_mode(info),
+        }
+        res = mt5.order_send(req)
+        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+            closed += 1
+    return closed, len(positions)
+
+def collect_snapshot(gate):
+    ensure_mt5()
+    acc = mt5.account_info()
+    if acc is None:
+        raise RuntimeError("account_info None")
+    now = datetime.now(timezone.utc)
+    today = now.strftime("%Y-%m-%d")
+    if S.day != today:
+        S.day, S.hwm, S.cb_latched = today, acc.equity, False
+    if acc.equity > S.hwm:
+        S.hwm = acc.equity
+    buffer = CB_DRAWDOWN - (S.hwm - acc.equity)
+    if buffer <= 0 and not S.cb_latched:
+        S.cb_latched = True
+    cb = S.cb_latched
+
+    manage_t1_positions()
+
+    pos = []
+    for p in (mt5.positions_get() or []):
+        info = mt5.symbol_info(p.symbol)
+        pos.append(dict(
+            ticket=p.ticket,
+            symbol=norm_sym(p.symbol),
+            side="BUY" if p.type == mt5.POSITION_TYPE_BUY else "SELL",
+            volume=p.volume,
+            floating_pnl=p.profit + p.swap,
+            entry_price=p.price_open,
+            digits=getattr(info, "digits", 2),
+        ))
+    held = {p["symbol"] for p in pos}
+
+    ticks = {}
+    for base, _ in FLEET:
+        mt5.symbol_select(base + SUFFIX, True)
+        ticks[base] = mt5.symbol_info_tick(base + SUFFIX)
+
+    rows = []
+    for base, tf in FLEET:
+        tk, other = ticks[base], ("M5" if tf == "M15" else "M15")
+        if tk is None:
+            rows.append(dict(sym=base, tf=tf, bias="FLAT", edge=50.0, delta=0.0, dii=0.0, in_trade=base in held))
+            continue
+        fm, fo = flow(base + SUFFIX, TF_MIN[tf], tk.time), flow(base + SUFFIX, TF_MIN[other], tk.time)
+        edge, direction, _ = edge_model(fm, fo)
+        rows.append(dict(
+            sym=base,
+            tf=tf,
+            bias=direction,
+            edge=edge,
+            delta=fm["delta"] if fm else 0.0,
+            dii=fm["dii"] if fm else 0.0,
+            in_trade=base in held,
+        ))
+
+    asset_cfg = load_asset_thresholds()
+    news_quarantine, news_status = check_news_lockout()
+    triggers = []
+    fired_orders = []
+    now_mono = time.monotonic()
+
+    if not cb and not news_quarantine and len(held) < MAX_FLEET:
+        candidates = sorted([r for r in rows if r["bias"] != "FLAT" and not r["in_trade"]], key=lambda x: -x["edge"])
+        for r in candidates:
+            base_sym = r["sym"]
+            acfg = asset_cfg.get(base_sym, {})
+            req_edge = max(float(gate), float(acfg.get("min_edge", gate)))
+            if r["edge"] < req_edge:
+                continue
+            if now_mono < S.cooldowns.get(base_sym, 0.0):
+                continue
+            if corr_check(base_sym, r["bias"], [{"sym": p["symbol"], "side": p["side"]} for p in pos]):
+                continue
+            sym = base_sym + SUFFIX
+            info, tk, a = mt5.symbol_info(sym), ticks[base_sym], atr15(sym)
+            if not (info and tk and a > 0):
+                continue
+            buy = r["bias"] == "BUY"
+            entry = tk.ask if buy else tk.bid
+            spread_dist = abs(tk.ask - tk.bid)
+            sl_d = max(1.5 * a, 1.2 * info.trade_stops_level * info.point)
+            if spread_dist > MAX_SPREAD_FRAC * sl_d:
+                log.info("[SKIP SPREAD] %s spread %.5f > %.5f", sym, spread_dist, MAX_SPREAD_FRAC * sl_d)
+                continue
+            tp_mult = float(acfg.get("tp_mult", 2.0))
+            sl, tp = (entry - sl_d, entry + sl_d * tp_mult) if buy else (entry + sl_d, entry - sl_d * tp_mult)
+            sl, tp = round(sl, info.digits), round(tp, info.digits)
+            risk_pct = float(acfg.get("risk_percent", 0.75)) / 100.0
+            otype = mt5.ORDER_TYPE_BUY if buy else mt5.ORDER_TYPE_SELL
+            lots, actual_risk = size_lots(info, acc, otype, sym, entry, sl, risk_pct=risk_pct)
+            if lots <= 0:
+                continue
+
+            trig_obj = dict(
+                sym=base_sym,
+                symbol=base_sym,
+                dir=r["bias"],
+                bias=r["bias"],
+                edge=r["edge"],
+                prob=r["edge"],
+                lots=lots,
+                risk_usd=actual_risk,
+                risk=actual_risk,
+                entry=entry,
+                sl=sl,
+                tp=tp,
+                digits=info.digits,
+                status="ARMED",
+                ticket=0,
+            )
+
+            ti = mt5.terminal_info()
+            margin_ok = (acc.margin / max(acc.equity, 1.0)) < MARGIN_USE_CAP
+            if AUTO_EXECUTE and ti and ti.trade_allowed and margin_ok:
+                req = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": sym,
+                    "volume": lots,
+                    "type": otype,
+                    "price": entry,
+                    "sl": sl,
+                    "tp": tp,
+                    "deviation": 25,
+                    "magic": MAGIC,
+                    "comment": f"T1_APEX_{int(round(r['edge']))}P",
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": get_filling_mode(info),
+                }
+                res = mt5.order_send(req)
+                if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    S.cooldowns[base_sym] = now_mono + SYM_COOLDOWN_SEC
+                    trig_obj["status"] = "AUTO-FIRED"
+                    trig_obj["ticket"] = res.order
+                    fired_orders.append(trig_obj)
+                    log.info(
+                        "🚨 [T1 AUTO-TRIGGERED] %s %s %.2fL @ %s | Edge=%.1f%% (Gate=%d%%) | SL=%s | TP=%s | Ticket=#%d",
+                        r["bias"], sym, lots, entry, r["edge"], gate, sl, tp, res.order
+                    )
+                    pos.append(dict(
+                        ticket=res.order,
+                        symbol=base_sym,
+                        side=r["bias"],
+                        volume=lots,
+                        floating_pnl=0.0,
+                        entry_price=entry,
+                        digits=info.digits,
+                    ))
+                    held.add(base_sym)
+                    for row_item in rows:
+                        if row_item["sym"] == base_sym:
+                            row_item["in_trade"] = True
+                else:
+                    rc = getattr(res, "retcode", -1)
+                    cm = getattr(res, "comment", "None")
+                    log.warning("[T1 ORDER REJECTED] %s %s %.2fL @ %s -> retcode=%s (%s)", sym, r["bias"], lots, entry, rc, cm)
+                    trig_obj["status"] = f"REJECT ({rc})"
+
+            triggers.append(trig_obj)
+            break
+
+    top_trig = triggers[0] if triggers else None
+    return dict(
+        nav=acc.equity,
+        float=acc.profit,
+        free=acc.margin_free,
+        buffer=buffer,
+        cb=cb,
+        news_status=news_status,
+        pos=pos,
+        fleet_locked=len(held),
+        total_fleet=len(FLEET),
+        rows=rows,
+        triggers=triggers,
+        trigger=top_trig,
+        top_trigger=top_trig,
+        fired_orders=fired_orders,
+        gate=gate,
+    )
+
+def fl(x):
+    return f"{'+' if x >= 0 else '-'}${abs(x):,.2f}"
+
+async def position_watcher():
+    last_tickets = frozenset()
+    while True:
+        try:
+            cur = frozenset(p.ticket for p in (await mt5_call(mt5.positions_get, timeout=5.0) or []))
+            if cur != last_tickets:
+                last_tickets = cur
+                REFRESH_EVENT.set()
+        except Exception:
+            pass
+        await asyncio.sleep(1.5)
+
+def render_decay_frame(s, frame):
+    """Simulates fine particle sand erosion and brush-stroke dispersion."""
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+    globe = GLOBES[frame % len(GLOBES)]
+    sess_compact = get_market_session_compact()
+
+    sand_card = [
+        "⁖⁘⁛ <b>SHIVSOUL NEXUS // EROSION MATRIX</b> ⁛⁘⁖",
+        "⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘",
+        "<code>NAV   $⁖,⁘⁛.·⁞  | Float ⁘·⁖.⁛⁞</code>",
+        "<code>FreeM $⁖,⁘⁛.·⁞  | Fleet ⁘/6</code>",
+        "<code>OMEGA-APEX-v2.5  | ⁖⁘ PARTICLE DISPERSION ⁘⁖</code>",
+        "⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘",
+        "⚡ <b>LIVE EXECUTIONS: [SAND-BRUSH FLUSHING]</b>",
+        "<code>⁖⁘⁛·⁞⁖ • ⁘⁘⁘⁘ 0.00L | Open ⁖⁘⁛.·⁞⁖</code>",
+        "⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘",
+        "🎯 <b>ALPHA TRIGGER:</b> <code>[PULSE RE-INDEXING]</code>",
+        "⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘",
+        "📡 <b>MICROSTRUCTURE SCANNER (BURST RESOLVING)</b>",
+        "<code>#1 ⁖⁘⁛·⁞⁖ ⚪ ⁘⁘⁘⁘ [⁖⁘⁛] ⁘⁖% | Δ:⁘·⁖⁛⁞ DII:⁘·⁖⁛</code>",
+        "<code>#2 ⁖⁘⁛·⁞⁖ ⚪ ⁘⁘⁘⁘ [⁖⁘⁛] ⁘⁖% | Δ:⁘·⁖⁛⁞ DII:⁘·⁖⁛</code>",
+        "<code>#3 ⁖⁘⁛·⁞⁖ ⚪ ⁘⁘⁘⁘ [⁖⁘⁛] ⁘⁖% | Δ:⁘·⁖⁛⁞ DII:⁘·⁖⁛</code>",
+        "<code>#4 ⁖⁘⁛·⁞⁖ ⚪ ⁘⁘⁘⁘ [⁖⁘⁛] ⁘⁖% | Δ:⁘·⁖⁛⁞ DII:⁘·⁖⁛</code>",
+        "<code>#5 ⁖⁘⁛·⁞⁖ ⚪ ⁘⁘⁘⁘ [⁖⁘⁛] ⁘⁖% | Δ:⁘·⁖⁛⁞ DII:⁘·⁖⁛</code>",
+        "<code>#6 ⁖⁘⁛·⁞⁖ ⚪ ⁘⁘⁘⁘ [⁖⁘⁛] ⁘⁖% | Δ:⁘·⁖⁛⁞ DII:⁘·⁖⁛</code>",
+        "⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘⁘",
+        f"{globe} <b>BURSTING MATRIX // INSTANTIATING PULSE...</b>",
+        f"⏱️ <i>{now_utc}</i> | <code>{sess_compact}</code> | <code>⁖⁘%</code>"
+    ]
+    return chr(10).join(sand_card)
+
+def render_dashboard(s, frame):
+    now_utc = datetime.now(timezone.utc).strftime('%H:%M:%S UTC')
+    globe = GLOBES[frame % len(GLOBES)]
+    sess_compact = get_market_session_compact()
+    out = [
+        '🔱 <b>SHIVSOUL NEXUS / OMEGA APEX ELITE MATRIX</b>',
+        SEP,
+        f"<code>NAV   ${s['nav']:,.2f}</code>",
+        f"<code>Float {fl(s['float'])}</code>",
+        f"<code>FreeM ${s['free']:,.2f} | Fleet {s['fleet_locked']}/{s['total_fleet']}</code>",
+        '<code>OMEGA-APEX-v2.5 | 100% AUTONOMOUS (T1)</code>',
+        SEP
+    ]
+    if not s['pos']:
+        out.append('⚡ <b>ACTIVE POSITIONS (CORRELATION SHIELD)</b>')
+        out.append('• <i>Zero directional exposure — All engines flat</i>')
+        out.append(SEP)
+    else:
+        out.append('⚡ <b>LIVE MARKET EXECUTIONS (LOCKED)</b>')
+        for p_item in s['pos']:
+            d = p_item.get('digits', 2)
+            sym = str(p_item.get('symbol', '')).strip()
+            side = str(p_item.get('side', '')).strip()
+            vol = float(p_item.get('volume', 0.0))
+            pnl = fl(p_item.get('floating_pnl', 0.0))
+            op_p = f"{p_item.get('entry_price', 0.0):,.{d}f}"
+            out.append(f'<u><b>{sym}</b> • {side} {vol:.2f}L</u>')
+            out.append(f'<u>Float {pnl} | Open {op_p}</u>')
+        out.append(SEP)
+
+    trig = s.get('trigger') or s.get('top_trigger')
+    if trig:
+        t = trig
+        d = t.get('digits', 2)
+        edge_val = int(round(float(t.get('edge', 0))))
+        st_tag = f" [#{t['ticket']}]" if t.get("ticket") else f" [{t.get('status', 'ARMED')}]"
+        out.append(f"🎯 <b>ALPHA TRIGGER: {t['sym']} ({t['dir']} @ {edge_val}%){st_tag}</b>")
+        out.append(f"\u2022 <i>Order Sizing:</i> <code>{t['lots']:.2f} Lots (${t['risk_usd']:.2f} risk)</code>")
+        out.append(f"\u2022 <i>Entry:</i> <code>{t['entry']:,.{d}f}</code>")
+        out.append(f"\u2022 <i>SL:</i> <code>{t['sl']:,.{d}f}</code> | <i>TP:</i> <code>{t['tp']:,.{d}f}</code>")
+        out.append(SEP)
+    else:
+        ns = s.get("news_status", "Matrix Balanced | Awaiting Edge")
+        out.append(f'🎯 <b>ALPHA TRIGGER:</b> <code>{ns}</code>')
+        out.append(SEP)
+
+    out.append('📡 <b>MICROSTRUCTURE SCANNER FLEET (M15+M5 DUAL)</b>')
+    for i, r in enumerate(s['rows'], 1):
+        b_raw = str(r.get('bias', 'FLAT')).upper()
+        c = '🟢' if b_raw in ('BUY', 'LONG') else ('🔴' if b_raw in ('SELL', 'SHRT') else '⚪')
+        tag = '🔒 [LCK]' if r.get('in_trade') else '⚡ [HUNT]'
+        dii_str = f"{float(r.get('dii', 0.0)):+.2f}"
+        delta_val = int(round(float(r.get('delta', 0))))
+        delta_str = f"{delta_val:+d}"
+        edge_int = int(round(float(r.get('edge', 0))))
+        sym = str(r.get('sym', ''))[:6]
+        tf = str(r.get('tf', 'M15'))[:3]
+        bias = b_raw[:4]
+        row_l1 = f"#{i} {sym:<6} {c} {bias:<4} [{tf:<3}] {edge_int:>2}%"
+        row_l2 = f"   Δ:{delta_str:>5} DII:{dii_str:>5} {tag}"
+        out.append(f'<code>{row_l1}</code>')
+        out.append(f'<code>{row_l2}</code>')
+    out.append(SEP)
+    out.append(f'{globe} <b>LIVE 60S CADENCE ACTIVE</b>')
+    out.append(f'⏱️ <i>{now_utc}</i> | <code>{sess_compact}</code> | <code>{s["gate"]}%</code>')
+    return chr(10).join(out)
+
+async def cadence():
+    anchor = Anchor()
+    next_tick = asyncio.get_running_loop().time()
+    while True:
+        now_time = asyncio.get_running_loop().time()
+        left = next_tick - now_time
+        if left <= 0 or REFRESH_EVENT.is_set():
+            REFRESH_EVENT.clear()
+            S.frame_idx += 1
+            next_tick = asyncio.get_running_loop().time() + CADENCE
+            try:
+                if S.last_snap:
+                    fade_text = render_decay_frame(S.last_snap, S.frame_idx)
+                    await anchor.push(fade_text, keyboard(S.gate))
+                    await asyncio.sleep(0.65)
+
+                snap = await mt5_call(collect_snapshot, S.gate)
+                S.last_snap = snap
+                text = render_dashboard(snap, S.frame_idx)
+                res = await anchor.push(text, keyboard(S.gate))
+                log.info("Cadence text-fade complete (%s, Frame %d, Gate %d%%)", res, S.frame_idx % len(GLOBES), S.gate)
+
+                for fo in snap.get("fired_orders", []):
+                    d = fo.get("digits", 2)
+                    alert_msg = (
+                        f"🚨 <b>T1 ALPHA AUTO-TRIGGER EXECUTED</b>\n"
+                        f"{SEP}\n"
+                        f"• <b>Asset:</b> <code>{fo['sym']} ({fo['dir']})</code>\n"
+                        f"• <b>Confidence:</b> <code>{fo['edge']:.1f}% (Gate: {S.gate}%)</code>\n"
+                        f"• <b>Volume:</b> <code>{fo['lots']:.2f} Lots (${fo['risk_usd']:.2f} risk)</code>\n"
+                        f"• <b>Entry:</b> <code>{fo['entry']:,.{d}f}</code>\n"
+                        f"• <b>SL:</b> <code>{fo['sl']:,.{d}f}</code> | <b>TP:</b> <code>{fo['tp']:,.{d}f}</code>\n"
+                        f"• <b>Ticket:</b> <code>#{fo['ticket']}</code>"
+                    )
+                    try:
+                        await T.call("sendMessage", {"chat_id": CHAT_ID, "text": alert_msg, "parse_mode": "HTML"})
+                    except Exception as te:
+                        log.warning("Auto-trigger alert send warning: %s", te)
+            except Exception as e:
+                log.warning("Cadence cycle exception: %s", e)
+        else:
+            try:
+                await asyncio.wait_for(REFRESH_EVENT.wait(), timeout=max(0.2, min(left, 1.0)))
+            except asyncio.TimeoutError:
+                pass
+
+async def interaction():
+    offset = None
+    while True:
+        try:
+            ups = await T.call("getUpdates", {"offset": offset, "timeout": 25, "allowed_updates": ["callback_query", "message"]}, poll=True)
+        except TGError as e:
+            await asyncio.sleep(max(3.0, e.retry_after))
+            continue
+        for u in ups:
+            offset = u["update_id"] + 1
+            cq = u.get("callback_query")
+            if not cq:
+                continue
+            data = cq.get("data", "")
+            ans = "OK"
+            if data == "cmd_status":
+                ans = f"T1 NAV: ${S.last_snap['nav']:,.2f} | Gate: {S.gate}% | Locked: {S.last_snap['fleet_locked']}/{S.last_snap['total_fleet']}" if S.last_snap else "Initializing..."
+            elif data == "cmd_scan":
+                REFRESH_EVENT.set()
+                ans = "Immediate 60s scan & trigger check queued."
+            elif data == "set_gate_75":
+                S.gate = 75
+                REFRESH_EVENT.set()
+                ans = "Auto-Trigger Confidence Gate set to 75%."
+            elif data == "set_gate_80":
+                S.gate = 80
+                REFRESH_EVENT.set()
+                ans = "Auto-Trigger Confidence Gate set to 80%."
+            elif data == "cmd_flatten":
+                now_m = time.monotonic()
+                if now_m <= S.flatten_armed_until:
+                    S.flatten_armed_until = 0.0
+                    closed, total = await mt5_call(flatten_all_positions)
+                    REFRESH_EVENT.set()
+                    ans = f"Flattened {closed}/{total} open positions on T1."
+                else:
+                    S.flatten_armed_until = now_m + 15.0
+                    ans = "⚠️ Tap /flatten again within 15s to close all T1 positions!"
+            try:
+                await T.call("answerCallbackQuery", {"callback_query_id": cq["id"], "text": ans})
+            except Exception:
+                pass
+
+async def main():
+    global REFRESH_EVENT, T
+    REFRESH_EVENT = asyncio.Event()
+    T = Telegram(TOKEN)
+    try:
+        await T.call("deleteWebhook", {})
+    except Exception:
+        pass
+    log.info("Starting ShivSoul Nexus Pro v2.5 Autonomous Engine on Terminal 1 (#%d)...", TARGET_ACCOUNT)
+    try:
+        await asyncio.gather(cadence(), interaction(), position_watcher())
     finally:
-        mt5.shutdown()
+        await T.aclose()
 
 if __name__ == "__main__":
-    run()
+    guard = socket.socket()
+    try:
+        guard.bind(("127.0.0.1", LOCK_PORT))
+    except OSError:
+        sys.exit("Instance lock active on port 48212. Single-writer guard engaged.")
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        mt5.shutdown()

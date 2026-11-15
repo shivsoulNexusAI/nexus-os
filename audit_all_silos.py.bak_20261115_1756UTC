@@ -1,0 +1,35 @@
+import MetaTrader5 as mt5
+
+terminals = [
+    ("SILO 1 (Quantower Majors)", r"C:/Program Files/MetaTrader 5 - Apex Satellite/terminal64.exe", 278061453),
+    ("SILO 2 (Nexus AI Bot)",     r"C:/MT5_Quant_278061453/terminal64.exe",                        278041169),
+    ("SILO 3 (Nexus Gold 24/7)",  r"C:/MT5_HFT_278041671/terminal64.exe",                          278041671)
+]
+
+print("=" * 95)
+print("TRIPARTITE LIVE FLEET AUDIT ACROSS ALL THREE ACCOUNTS")
+print("=" * 95)
+
+for name, path, target_acc in terminals:
+    if mt5.initialize(path=path, portable=False, timeout=10000):
+        acc = mt5.account_info()
+        positions = mt5.positions_get() or []
+        orders = mt5.orders_get() or []
+        
+        print(f"\n>>> {name} | Account #{acc.login} ({acc.server})")
+        print(f"    Balance: ${acc.balance:,.2f} | Equity: ${acc.equity:,.2f} | Margin Free: ${acc.margin_free:,.2f}")
+        print(f"    Open Positions: {len(positions)} | Pending Orders: {len(orders)}")
+        
+        for p in positions:
+            p_type = "BUY" if p.type == 0 else "SELL"
+            print(f"      [POS #{p.ticket}] {p.symbol:<7} {p_type:<4} {p.volume:.2f}L | Entry: {p.price_open:.5f} | Mark: {p.price_current:.5f} | PnL: ${p.profit:+,.2f} | SL: {p.sl:.5f} | TP: {p.tp:.5f}")
+            
+        for o in orders:
+            o_type = "BUY_STOP" if o.type == 4 else ("SELL_STOP" if o.type == 5 else str(o.type))
+            print(f"      [ORD #{o.ticket}] {o.symbol:<7} {o_type:<9} {o.volume_current:.2f}L | Price: {o.price_open:.5f} | SL: {o.sl:.5f} | TP: {o.tp:.5f} | Tag: {o.comment}")
+            
+        mt5.shutdown()
+    else:
+        print(f"\n>>> {name} -> Init Failed: {mt5.last_error()}")
+
+print("\n" + "=" * 95)

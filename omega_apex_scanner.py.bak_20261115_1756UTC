@@ -1,0 +1,244 @@
+import time
+import json
+import httpx
+import MetaTrader5 as mt5
+from datetime import datetime, timezone
+from pathlib import Path
+
+BASE_DIR = Path(r"C:\Quant-Nexus-Eng")
+T1_CONFIG = BASE_DIR / "t1_telegram_config.json"
+VERIFIED_T1_PATH = r"C:\Program Files\MetaTrader 5 - Apex Satellite\terminal64.exe"
+
+SYMBOLS = ["BTCUSD", "XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY"]
+CONFIDENCE_THRESHOLD = 75.0
+CADENCE_SECONDS = 60
+ROUTINE_HEARTBEAT_MINS = 15
+MAX_DAILY_DD_PCT = 3.5
+MAGIC_NUMBER = 278061453
+RISK_LOT = 0.01
+
+start_of_day_equity = None
+last_broadcast_ts = 0.0
+
+def load_t1_telegram():
+    data = json.loads(T1_CONFIG.read_text(encoding="utf-8-sig"))
+    token = data.get("token", data.get("", ""))
+    chat_id = data.get("chat_id", data.get("authorized_chat_id", "5279761713"))
+    return token, chat_id
+
+def send_telegram_matrix(text: str):
+    token, chat_id = load_t1_telegram()
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        httpx.post(url, json={"chat_id": chat_id, "text": text}, timeout=10.0)
+    except Exception as e:
+        print(f"[TELEGRAM EXCEPTION] {e}")
+
+def manage_open_positions():
+    """Institutional Breakeven & Profit-Lock Manager for active T1 positions."""
+    positions = mt5.positions_get(magic=MAGIC_NUMBER) or []
+    be_events = []
+    for pos in positions:
+        sym_info = mt5.symbol_info(pos.symbol)
+        tick = mt5.symbol_info_tick(pos.symbol)
+        if not sym_info or not tick or pos.tp == 0.0:
+            continue
+
+        if pos.type == mt5.POSITION_TYPE_BUY:
+            total_target = pos.tp - pos.price_open
+            current_gain = tick.bid - pos.price_open
+            be_price = round(pos.price_open + (tick.ask - tick.bid) + 5 * sym_info.point, sym_info.digits)
+            if total_target > 0 and current_gain >= 0.5 * total_target and pos.sl < be_price:
+                res = mt5.order_send({
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "symbol": pos.symbol,
+                    "position": pos.ticket,
+                    "sl": be_price,
+                    "tp": pos.tp,
+                })
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    be_events.append(f"🛡️ BE LOCKED {pos.symbol} @ {be_price}")
+
+        elif pos.type == mt5.POSITION_TYPE_SELL:
+            total_target = pos.price_open - pos.tp
+            current_gain = pos.price_open - tick.ask
+            be_price = round(pos.price_open - (tick.ask - tick.bid) - 5 * sym_info.point, sym_info.digits)
+            if total_target > 0 and current_gain >= 0.5 * total_target and (pos.sl > be_price or pos.sl == 0.0):
+                res = mt5.order_send({
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "symbol": pos.symbol,
+                    "position": pos.ticket,
+                    "sl": be_price,
+                    "tp": pos.tp,
+                })
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    be_events.append(f"🛡️ BE LOCKED {pos.symbol} @ {be_price}")
+    return be_events
+
+def compute_microstructure_score(symbol: str):
+    rates_m15 = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 10)
+    rates_m5  = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 10)
+    info = mt5.symbol_info(symbol)
+    if rates_m15 is None or rates_m5 is None or not info or len(rates_m15) < 5 or len(rates_m5) < 5:
+        return "FLAT", "M15", 50, 0, 0.00
+
+    m15_move = (rates_m15[-1]['close'] - rates_m15[-3]['open']) / info.point
+    m5_move  = (rates_m5[-1]['close'] - rates_m5[-2]['open']) / info.point
+
+    if abs(m5_move) > abs(m15_move) * 0.6:
+        tf = "M5 "
+        delta = int(round(m5_move / 10.0))
+    else:
+        tf = "M15"
+        delta = int(round(m15_move / 10.0))
+
+    vol_ratio = rates_m5[-1]['tick_volume'] / max(1.0, sum(r['tick_volume'] for r in rates_m5[-5:]) / 5.0)
+    dii = max(-0.99, min(0.99, (delta / 100.0) * vol_ratio))
+    raw_conf = 50.0 + min(45.0, abs(delta) * 0.25 + abs(dii) * 35.0)
+    confidence = int(round(raw_conf))
+
+    if confidence >= 60:
+        direction = "BUY" if delta > 0 else "SELL"
+    else:
+        direction = "FLAT"
+
+    return direction, tf, confidence, delta, dii
+
+def execute_auto_trigger(symbol: str, direction: str, confidence: int):
+    info_chk = mt5.symbol_info(symbol)
+    tick_chk = mt5.symbol_info_tick(symbol)
+    if not info_chk or not tick_chk or info_chk.trade_mode != mt5.SYMBOL_TRADE_MODE_FULL:
+        return f"⏸️ MARKET CLOSED {symbol} ({confidence}%)", False
+    if abs(time.time() - tick_chk.time) > 180 and "BTC" not in symbol:
+        return f"⏸️ WEEKEND CLOSED {symbol} ({confidence}%)", False
+
+    existing = mt5.positions_get(symbol=symbol)
+    if existing and len(existing) > 0:
+        return f"HOLDING {symbol} ({confidence}%)", False
+
+    order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+    price = tick_chk.ask if direction == "BUY" else tick_chk.bid
+
+    if "BTC" in symbol:
+        sl_pts = 25000 * info_chk.point
+        tp_pts = 50000 * info_chk.point
+    elif "XAU" in symbol:
+        sl_pts = 350 * info_chk.point
+        tp_pts = 700 * info_chk.point
+    else:
+        sl_pts = 150 * info_chk.point
+        tp_pts = 300 * info_chk.point
+
+    sl = price - sl_pts if direction == "BUY" else price + sl_pts
+    tp = price + tp_pts if direction == "BUY" else price - tp_pts
+    fill_mode = mt5.ORDER_FILLING_IOC if (info_chk.filling_mode & 2) else mt5.ORDER_FILLING_FOK
+
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": RISK_LOT,
+        "type": order_type,
+        "price": price,
+        "sl": round(sl, info_chk.digits),
+        "tp": round(tp, info_chk.digits),
+        "deviation": 30,
+        "magic": MAGIC_NUMBER,
+        "comment": f"OMEGA-APEX {confidence}%",
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": fill_mode,
+    }
+    res = mt5.order_send(request)
+    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+        return f"🚀 AUTO-TRIGGERED {direction} {symbol} @ {price} ({confidence}%)", True
+    return f"⚠️ TRIGGER REJECTED {symbol}: {res.retcode if res else 'None'}", False
+
+def run_scanner_cycle():
+    global start_of_day_equity, last_broadcast_ts
+
+    if not mt5.initialize(path=VERIFIED_T1_PATH):
+        print(f"[IPC ERROR] MT5 initialization failed: {mt5.last_error()}")
+        return
+
+    acc = mt5.account_info()
+    if not acc:
+        return
+
+    if start_of_day_equity is None:
+        start_of_day_equity = acc.equity
+
+    dd_pct = ((start_of_day_equity - acc.equity) / max(1.0, start_of_day_equity)) * 100.0
+    circuit_tripped = dd_pct >= MAX_DAILY_DD_PCT
+
+    be_events = manage_open_positions()
+    positions = mt5.positions_get() or []
+
+    scanner_lines = []
+    triggers = list(be_events)
+    urgent_event = len(be_events) > 0
+
+    for idx, sym in enumerate(SYMBOLS, 1):
+        mt5.symbol_select(sym, True)
+        direction, tf, conf, delta, dii = compute_microstructure_score(sym)
+        icon = "🟢" if direction == "BUY" else ("🔴" if direction == "SELL" else "⚪")
+        state_tag = "[EXEC]" if conf >= CONFIDENCE_THRESHOLD else "[HUNT]"
+
+        if conf >= CONFIDENCE_THRESHOLD and direction in ("BUY", "SELL"):
+            if circuit_tripped:
+                triggers.append(f"🛑 DD CIRCUIT BREAKER ({dd_pct:.2f}%)")
+                urgent_event = True
+            else:
+                status_str, fired = execute_auto_trigger(sym, direction, conf)
+                triggers.append(status_str)
+                if fired:
+                    urgent_event = True
+
+        scanner_lines.append(
+            f"#{idx} {sym} {icon} {direction:<4} [{tf}] {conf}%\n"
+            f"   Δ: {delta:+4d} DII:{dii:+.2f} ⚡ {state_tag}"
+        )
+
+    alpha_status = " | ".join(triggers) if triggers else "Matrix Balanced | Awaiting Edge"
+    now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+
+    if positions:
+        pos_lines = "\n".join(
+            [f"- {p.symbol} {'BUY' if p.type==0 else 'SELL'} {p.volume} @ {p.price_open} ({p.profit:+.2f})" for p in positions]
+        )
+    else:
+        pos_lines = "-\nZero directional exposure — All engines flat"
+
+    # Broadcast immediately on new execution / breakeven lock, or every 15 mins as heartbeat
+    if urgent_event or (time.time() - last_broadcast_ts) >= (ROUTINE_HEARTBEAT_MINS * 60):
+        msg = (
+            f"🔱 SHIVSOUL NEXUS / OMEGA APEX ELITE MATRIX\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"NAV   ${acc.balance:,.2f}\n"
+            f"Float ${acc.profit:+,.2f} (DD: {max(0.0, dd_pct):.2f}%)\n"
+            f"FreeM ${acc.margin_free:,.2f} | Fleet {len(positions)}/6\n"
+            f"OMEGA-APEX-v2.5 | 100% AUTONOMOUS (T1)\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⚡ ACTIVE POSITIONS (CORRELATION SHIELD)\n"
+            f"{pos_lines}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🎯 ALPHA TRIGGER: {alpha_status}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📡 MICROSTRUCTURE SCANNER FLEET (M15+M5 DUAL)\n"
+            + "\n".join(scanner_lines) + "\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌎 LIVE 60S CADENCE ACTIVE (15m Digest / Instant Exec)\n"
+            f"⏱️ {now_utc} | 🎯 Gate: >= {int(CONFIDENCE_THRESHOLD)}%"
+        )
+        send_telegram_matrix(msg)
+        last_broadcast_ts = time.time()
+
+if __name__ == "__main__":
+    while True:
+        start_t = time.time()
+        try:
+            run_scanner_cycle()
+        except Exception as e:
+            print(f"[LOOP ERROR] {e}")
+        elapsed = time.time() - start_t
+        time.sleep(max(1.0, CADENCE_SECONDS - elapsed))

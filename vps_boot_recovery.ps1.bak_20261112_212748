@@ -1,0 +1,38 @@
+﻿$py = "C:\Program Files\Python312\python.exe"
+$eng = "C:\Quant-Nexus-Eng"
+
+# 1. Clean old >24h tick caches on boot
+Get-ChildItem "C:\MT5_Quant_278017866\bases", "C:\MT5_Pending_278041169\bases", "C:\MT5_HFT_278041671\bases" -Recurse -Filter "*.tkc" -ErrorAction SilentlyContinue |
+    Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-24) } |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+# 2. Ensure T1, T2 (/portable), and T3 (/portable) terminals are running
+$procs = Get-CimInstance Win32_Process -Filter "Name = 'terminal64.exe'"
+if (-not ($procs | Where-Object { $_.ExecutablePath -match "MT5_Quant_278017866" })) {
+    Start-Process -FilePath "C:\MT5_Quant_278017866\terminal64.exe"
+    Start-Sleep -Seconds 10
+}
+if (-not ($procs | Where-Object { $_.ExecutablePath -match "MT5_Pending_278041169" })) {
+    Start-Process -FilePath "C:\MT5_Pending_278041169\terminal64.exe" -ArgumentList "/portable" -WorkingDirectory "C:\MT5_Pending_278041169"
+    Start-Sleep -Seconds 10
+}
+if (-not ($procs | Where-Object { $_.ExecutablePath -match "MT5_HFT_278041671" })) {
+    Start-Process -FilePath "C:\MT5_HFT_278041671\terminal64.exe" -ArgumentList "/portable" -WorkingDirectory "C:\MT5_HFT_278041671"
+    Start-Sleep -Seconds 10
+}
+
+# 3. Launch Final Production v44.2 daemons across all 3 terminals
+$pyProcs = Get-CimInstance Win32_Process -Filter "Name LIKE 'python%'" | Select-Object -ExpandProperty CommandLine
+
+if (-not ($pyProcs -match "microstructure_sentinel\.py")) {
+    Start-Process -FilePath $py -ArgumentList "-u", "$eng\microstructure_sentinel.py" -WorkingDirectory $eng -WindowStyle Hidden
+}
+if (-not ($pyProcs -match "nexus_omega_apex_daemon\.py.*T1_QUANT")) {
+    Start-Process -FilePath $py -ArgumentList "$eng\nexus_omega_apex_daemon.py --terminal `"C:/MT5_Quant_278017866/terminal64.exe`" --magic 44044 --tag T1_QUANT" -WorkingDirectory $eng -WindowStyle Hidden
+}
+if (-not ($pyProcs -match "nexus_omega_apex_daemon\.py.*T2_PENDING")) {
+    Start-Process -FilePath $py -ArgumentList "$eng\nexus_omega_apex_daemon.py --terminal `"C:/MT5_Pending_278041169/terminal64.exe`" --portable --magic 44046 --tag T2_PENDING" -WorkingDirectory $eng -WindowStyle Hidden
+}
+if (-not ($pyProcs -match "nexus_omega_apex_daemon\.py.*T3_HFT")) {
+    Start-Process -FilePath $py -ArgumentList "$eng\nexus_omega_apex_daemon.py --terminal `"C:/MT5_HFT_278041671/terminal64.exe`" --portable --magic 44045 --tag T3_HFT" -WorkingDirectory $eng -WindowStyle Hidden
+}

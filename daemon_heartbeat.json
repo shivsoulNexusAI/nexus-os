@@ -1,0 +1,18 @@
+{
+  "timestamp": 1794757271.305822,
+  "utc_iso": "2026-11-15T15:41:11.305822+00:00",
+  "status": "ONLINE_V3_V44_CERTIFIED",
+  "terminal": "278041169",
+  "equity": 0.0,
+  "open_positions": 0,
+  "pending_orders": 0,
+  "fusion": {
+    "BTCUSD": {
+      "ml_p": 0.027,
+      "delta_pct": -12.9,
+      "kz": 1,
+      "box_ready": false,
+      "h1_dir": 0
+    }
+  }
+}

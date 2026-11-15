@@ -1,0 +1,34 @@
+{
+    "true_pf": 6.16,
+    "net_pnl": 2550.24,
+    "max_dd": 42.63,
+    "assets": {
+        "XAUUSD": {
+            "trades": 25,
+            "net_pnl": 321.68,
+            "win_rate": 80.0,
+            "pf": 5.0,
+            "t2_harvests": 14,
+            "avg_win": 20.11,
+            "avg_loss": -16.08
+        },
+        "US30": {
+            "trades": 115,
+            "net_pnl": 1649.79,
+            "win_rate": 79.1,
+            "pf": 7.12,
+            "t2_harvests": 68,
+            "avg_win": 21.09,
+            "avg_loss": -11.23
+        },
+        "BTCUSD": {
+            "trades": 36,
+            "net_pnl": 578.77,
+            "win_rate": 77.8,
+            "pf": 5.02,
+            "t2_harvests": 20,
+            "avg_win": 25.82,
+            "avg_loss": -18.02
+        }
+    }
+}

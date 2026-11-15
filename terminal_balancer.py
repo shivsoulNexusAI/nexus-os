@@ -21,8 +21,8 @@ logger = get_rotating_logger("TerminalBalancer", "terminal_balancer.log")
 
 TERMINAL_REGISTRY = [
     {
-        "id": "TERM_QUANT_278017866",
-        "path": "C:/MT5_Quant_278017866/terminal64.exe",
+        "id": "TERM_QUANT_278061453",
+        "path": "C:/MT5_Quant_278061453/terminal64.exe",
         "weight_override": None,
         "enabled": True
     },

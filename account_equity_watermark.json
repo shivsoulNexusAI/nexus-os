@@ -1,0 +1,7 @@
+{
+    "date": "2026-11-12",
+    "starting_equity": 1103.59,
+    "consecutive_losses": 0,
+    "cooldown_until": null,
+    "circuit_breaker_tripped": false
+}

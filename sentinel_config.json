@@ -1,0 +1,8 @@
+{
+    "dead_man_switch": {
+        "enabled": true,
+        "webhook_url": "https://hc-ping.com/YOUR-UUID-HERE",
+        "ping_interval_sec": 60,
+        "timeout_sec": 5.0
+    }
+}

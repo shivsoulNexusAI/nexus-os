@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus Midnight Rollover & Real-Time Spread Guard Daemon
 Protects all terminals from spread widening and swaps during 23:55 - 00:10 broker window.
 """
@@ -27,9 +27,9 @@ logging.basicConfig(
 log = logging.getLogger("RolloverGuard")
 
 MT5_PATHS = [
-    (r"C:\MT5_Quant_278017866\terminal64.exe", 278017866),
-    (r"C:\MT5_Pending_278041169\terminal64.exe", 278041169),
-    (r"C:\MT5_HFT_278041671\terminal64.exe", 278041671)
+    (r"C:\MT5_Quant_278061453\terminal64.exe", 278062038),
+    (r"C:\MT5_Pending_278041169\terminal64.exe", 278062039),
+    (r"C:\MT5_HFT_278041671\terminal64.exe", 278062042)
 ]
 
 MAX_ALLOWED_SPREAD_POINTS = {

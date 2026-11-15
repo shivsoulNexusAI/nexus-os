@@ -1,0 +1,66 @@
+{
+    "NEXUS_DYN_P2": {
+        "2025": {
+            "trades": 4740,
+            "win_rate": 41.73,
+            "pf": 1.11,
+            "net_pnl": 374.9,
+            "max_dd_pct": 6.61,
+            "avg_win": 1.89,
+            "avg_loss": -1.21,
+            "sharpe": 0.46
+        },
+        "2026": {
+            "trades": 12199,
+            "win_rate": 40.83,
+            "pf": 1.04,
+            "net_pnl": 560.27,
+            "max_dd_pct": 16.12,
+            "avg_win": 2.62,
+            "avg_loss": -1.73,
+            "sharpe": 0.23
+        },
+        "COMBINED_2025_2026": {
+            "trades": 16939,
+            "win_rate": 41.08,
+            "pf": 1.06,
+            "net_pnl": 935.18,
+            "max_dd_pct": 12.79,
+            "avg_win": 2.41,
+            "avg_loss": -1.59,
+            "sharpe": 0.29
+        }
+    },
+    "NEXUS_V44_HYBRID": {
+        "2025": {
+            "trades": 309,
+            "win_rate": 34.95,
+            "pf": 0.91,
+            "net_pnl": -46.36,
+            "max_dd_pct": 7.07,
+            "avg_win": 4.45,
+            "avg_loss": -2.62,
+            "sharpe": -0.52
+        },
+        "2026": {
+            "trades": 587,
+            "win_rate": 36.29,
+            "pf": 0.9,
+            "net_pnl": -128.73,
+            "max_dd_pct": 17.58,
+            "avg_win": 5.64,
+            "avg_loss": -3.55,
+            "sharpe": -0.59
+        },
+        "COMBINED_2025_2026": {
+            "trades": 896,
+            "win_rate": 35.83,
+            "pf": 0.91,
+            "net_pnl": -175.09,
+            "max_dd_pct": 18.64,
+            "avg_win": 5.24,
+            "avg_loss": -3.23,
+            "sharpe": -0.56
+        }
+    }
+}

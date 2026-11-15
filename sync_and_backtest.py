@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime, timezone, timedelta
 
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
+TERMINAL = r"C:/MT5_Quant_278061453/terminal64.exe"
 SYMBOLS = ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "BTCUSD"]
 END_DATE = datetime(2026, 11, 1, tzinfo=timezone.utc)
 START_DATE = datetime(2025, 11, 1, tzinfo=timezone.utc)

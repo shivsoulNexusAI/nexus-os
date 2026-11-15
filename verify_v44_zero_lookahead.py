@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 import MetaTrader5 as mt5
 
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
+TERMINAL = r"C:/MT5_Quant_278061453/terminal64.exe"
 END_DT = datetime(2026, 11, 12, 23, 59, tzinfo=timezone.utc)
 START_DT = datetime(2025, 11, 12, 0, 0, tzinfo=timezone.utc)
 

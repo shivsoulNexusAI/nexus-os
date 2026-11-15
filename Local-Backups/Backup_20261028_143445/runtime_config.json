@@ -1,9 +1,0 @@
-{
-  "circuit_breaker_latched": false,
-  "circuit_breaker_tripped": false,
-  "circuit_breaker_reason": null,
-  "execution_edge_threshold": 0.75,
-  "default_max_lot": 0.05,
-  "basket_take_profit": 15.0,
-  "max_global_positions": 4
-}

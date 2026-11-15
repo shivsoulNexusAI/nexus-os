@@ -1,5 +1,5 @@
-﻿"""
-QuantNexus Live Feeder: Connects MT5 (Account 278017866) to Silver Bullet Engine.
+"""
+QuantNexus Live Feeder: Connects MT5 (Account 278062038) to Silver Bullet Engine.
 Scans the 6-asset fleet across M15/M5 timeframes for institutional setups.
 """
 
@@ -9,8 +9,8 @@ from datetime import datetime, timezone
 from silver_bullet_sniper import evaluate_silver_bullet, check_killzone, calculate_atr
 
 FLEET_SYMBOLS = ["BTCUSD", "XAUUSD", "EURUSD", "GBPUSD", "USDJPY", "GBPJPY"]
-MT5_PATH = r"C:\MT5_Quant_278017866\terminal64.exe"
-ACCOUNT = 278017866
+MT5_PATH = r"C:\MT5_Quant_278061453\terminal64.exe"
+ACCOUNT = 278062038
 
 def init_mt5() -> bool:
     if mt5.initialize(path=MT5_PATH):
@@ -23,7 +23,7 @@ def init_mt5() -> bool:
 
 def scan_fleet():
     if not init_mt5():
-        print("[-] Failed to initialize MT5 terminal on Account 278017866.")
+        print("[-] Failed to initialize MT5 terminal on Account 278062038.")
         return
 
     in_kz, kz_name = check_killzone()

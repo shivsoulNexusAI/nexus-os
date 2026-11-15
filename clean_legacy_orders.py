@@ -1,6 +1,6 @@
 import MetaTrader5 as mt5
 
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
+TERMINAL = r"C:/MT5_Quant_278061453/terminal64.exe"
 if mt5.initialize(path=TERMINAL, portable=False):
     orders = mt5.orders_get() or []
     purged = 0

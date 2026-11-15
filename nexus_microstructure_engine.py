@@ -132,4 +132,4 @@ class NexusMicrostructureEngine:
             "elapsed_bars": elapsed_bars,
             "max_bars": self.TIME_EXPIRY_BARS,
             "trigger_time_exit": expired
-        }
+        }

@@ -1,7 +1,7 @@
-﻿r"""
+r"""
 QuantNexus Alpha Engine: Hardened ICT Silver Bullet Model
 Liquidity Sweep Pre-condition (BSL/SSL Purge), Displacement, ATR Filter, 50% MT & Buffer SL
-Account: 278017866 | Directory: C:\Quant-Nexus-Eng
+Account: 278062038 | Directory: C:\Quant-Nexus-Eng
 """
 
 import math

@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus Telegram Command Center - Precision Execution Fix
 Fixes MT5 liquidation filling mode & dynamic slippage tolerance.
 """
@@ -22,9 +22,9 @@ logging.basicConfig(
 log = logging.getLogger("CommandCenter")
 
 TERMINALS = {
-    "T1": (r"C:\MT5_Quant_278017866\terminal64.exe", 278017866),
-    "T2": (r"C:\MT5_Pending_278041169\terminal64.exe", 278041169),
-    "T3": (r"C:\MT5_HFT_278041671\terminal64.exe", 278041671)
+    "T1": (r"C:\MT5_Quant_278061453\terminal64.exe", 278062038),
+    "T2": (r"C:\MT5_Pending_278041169\terminal64.exe", 278062039),
+    "T3": (r"C:\MT5_HFT_278041671\terminal64.exe", 278062042)
 }
 
 def load_cfg():

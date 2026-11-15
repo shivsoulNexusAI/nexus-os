@@ -1,0 +1,72 @@
+[
+  {
+    "title": "CPI m/m",
+    "country": "CAD",
+    "ts_utc": 1794835800.0
+  },
+  {
+    "title": "Median CPI y/y",
+    "country": "CAD",
+    "ts_utc": 1794835800.0
+  },
+  {
+    "title": "Trimmed CPI y/y",
+    "country": "CAD",
+    "ts_utc": 1794835800.0
+  },
+  {
+    "title": "Fed Chairman Warsh Speaks",
+    "country": "USD",
+    "ts_utc": 1794848400.0
+  },
+  {
+    "title": "RBA Gov Bullock Speaks",
+    "country": "AUD",
+    "ts_utc": 1794869400.0
+  },
+  {
+    "title": "Inflation Expectations q/q",
+    "country": "NZD",
+    "ts_utc": 1794880800.0
+  },
+  {
+    "title": "Core Retail Sales m/m",
+    "country": "USD",
+    "ts_utc": 1794922200.0
+  },
+  {
+    "title": "Retail Sales m/m",
+    "country": "USD",
+    "ts_utc": 1794922200.0
+  },
+  {
+    "title": "CPI y/y",
+    "country": "GBP",
+    "ts_utc": 1794985200.0
+  },
+  {
+    "title": "BOE Gov Bailey Speaks",
+    "country": "GBP",
+    "ts_utc": 1794987000.0
+  },
+  {
+    "title": "BOE Gov Bailey Speaks",
+    "country": "GBP",
+    "ts_utc": 1795014000.0
+  },
+  {
+    "title": "FOMC Meeting Minutes",
+    "country": "USD",
+    "ts_utc": 1795028400.0
+  },
+  {
+    "title": "Employment Change",
+    "country": "AUD",
+    "ts_utc": 1795048200.0
+  },
+  {
+    "title": "Unemployment Rate",
+    "country": "AUD",
+    "ts_utc": 1795048200.0
+  }
+]

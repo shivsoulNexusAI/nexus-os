@@ -1,0 +1,10 @@
+{
+    "timestamp": "2026-11-12T07:35:20.533934+00:00",
+    "symbol": "XAUUSD",
+    "atr_m5": 5.58,
+    "min_atr_required": 1.8,
+    "chop_index": 45.7,
+    "is_asian_session": false,
+    "straddle_permitted": true,
+    "status": "ARMED"
+}

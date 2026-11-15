@@ -1,0 +1,14 @@
+{
+    "day_str": "2026-11-12",
+    "day_start_equity": 1146.25,
+    "circuit_tripped": false,
+    "win_streak": {},
+    "consec_losses": {},
+    "skip_date": {},
+    "processed_deals": [],
+    "t1_done": [],
+    "t2_done": [],
+    "absorb_locked": [],
+    "peak_dist": {},
+    "sl_dist": {}
+}

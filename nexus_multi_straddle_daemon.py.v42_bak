@@ -1,0 +1,286 @@
+import os
+import sys
+import json
+import time
+import logging
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+import numpy as np
+import pandas as pd
+import MetaTrader5 as mt5
+
+sys.path.insert(0, r"C:\Quant-Nexus-OS")
+try:
+    from core.anti_whipsaw import AntiWhipsawEngine
+    from core.nexus_signal_engine import NexusSignalEngine
+except Exception:
+    AntiWhipsawEngine = None
+    NexusSignalEngine = None
+
+TERMINAL_PATH = r"C:/MT5_Quant_278017866/terminal64.exe"
+MICRO_STATE_PATH = Path(r"C:\Quant-Nexus-Eng\microstructure_state.json")
+LOG_PATH = Path(r"C:\Quant-Nexus-Eng\nexus_multi_straddle.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8"), logging.StreamHandler(sys.stdout)],
+)
+
+CORE_TRIAD = ["XAUUSD", "US30", "BTCUSD"]
+RISK_PER_TRADE_PCT = 0.013  # 1.3% volatility parity sizing (~$15 per trade on $1,146 equity)
+MAX_ACTIVE_ASSETS = 3
+MAGIC_NUMBER = 20260420
+
+class QuantNexusV42Daemon:
+    def __init__(self):
+        self.whipsaw = AntiWhipsawEngine(cooldown_sec=900, max_consecutive_losses=2, penalty_sec=3600) if AntiWhipsawEngine else None
+        self.fade_engine = NexusSignalEngine(symbols=["XAUUSD", "BTCUSD"]) if NexusSignalEngine else None
+        self.processed_deals = set()
+        self.daily_box_cache = {}   # (date_str, sym) -> dict(ref_high, ref_low, atr_box, buy_stop, sell_stop, sl_dist)
+        self.daily_traded = set()   # (date_str, sym) -> max 1 breakout cycle per session
+
+    def connect_mt5(self) -> bool:
+        if mt5.initialize(path=TERMINAL_PATH, portable=False):
+            return True
+        logging.error(f"MT5 initialize failed: {mt5.last_error()}")
+        return False
+
+    def read_microstructure(self, sym: str) -> dict:
+        try:
+            if MICRO_STATE_PATH.exists():
+                data = json.loads(MICRO_STATE_PATH.read_text(encoding="utf-8"))
+                return data.get("symbols", {}).get(sym, {})
+        except Exception:
+            pass
+        return {}
+
+    def sync_whipsaw_history(self):
+        if not self.whipsaw:
+            return
+        ref_tick = mt5.symbol_info_tick("EURUSD")
+        now_ts = int(ref_tick.time) if ref_tick else int(time.time())
+        now_dt = datetime.fromtimestamp(now_ts, tz=timezone.utc)
+        deals = mt5.history_deals_get(now_dt - timedelta(hours=3), now_dt + timedelta(hours=3)) or []
+        for d in sorted(deals, key=lambda x: x.time):
+            if d.entry == 1 and d.ticket not in self.processed_deals:
+                self.processed_deals.add(d.ticket)
+                if d.symbol in CORE_TRIAD and 0 <= (now_ts - d.time) <= 3600:
+                    if d.profit < -0.10:
+                        self.whipsaw.record_loss(d.symbol)
+                    elif d.profit > 0.10:
+                        self.whipsaw.record_win(d.symbol)
+
+    def enforce_per_symbol_oco(self, positions, orders):
+        active_syms = {p.symbol for p in positions}
+        for o in orders:
+            if o.symbol in active_syms:
+                res = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    logging.info(f"[V4.2 OCO] Cancelled opposite pending leg #{o.ticket} on {o.symbol} (position active).")
+
+    def get_h1_strong_bull(self, sym: str) -> bool:
+        rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_H1, 1, 60)
+        if rates is None or len(rates) < 50:
+            return False
+        closes = pd.Series([float(r["close"]) for r in rates])
+        ema20 = closes.ewm(span=20, adjust=False).mean().iloc[-1]
+        ema50 = closes.ewm(span=50, adjust=False).mean().iloc[-1]
+        return bool(closes.iloc[-1] > ema20 and ema20 > ema50)
+
+    def compute_session_box(self, sym: str, srv_dt: datetime):
+        date_str = srv_dt.strftime("%Y-%m-%d")
+        key = (date_str, sym)
+        if key in self.daily_box_cache:
+            return self.daily_box_cache[key]
+
+        # Need at least 16 completed M15 bars (00:00 -> 04:00 Server Time)
+        if srv_dt.hour < 4:
+            return None
+
+        rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M15, 1, 48)
+        if rates is None or len(rates) < 24:
+            return None
+
+        df = pd.DataFrame(rates)
+        df["dt"] = pd.to_datetime(df["time"], unit="s", utc=True)
+        today_bars = df[df["dt"].dt.strftime("%Y-%m-%d") == date_str]
+        if len(today_bars) < 16:
+            return None
+
+        ref = today_bars.iloc[:16]
+        ref_high = float(ref["high"].max())
+        ref_low = float(ref["low"].min())
+
+        prev_c = df["close"].shift(1)
+        tr = np.maximum(df["high"] - df["low"], np.maximum((df["high"] - prev_c).abs(), (df["low"] - prev_c).abs()))
+        atr_box = float(tr.rolling(20).mean().iloc[-1])
+        if np.isnan(atr_box) or atr_box <= 0:
+            return None
+
+        box_range = ref_high - ref_low
+        if box_range > (atr_box * 6.5) or box_range < (atr_box * 0.8):
+            self.daily_box_cache[key] = None
+            return None
+
+        buf_dist = atr_box * 0.45
+        sl_dist = atr_box * 1.35
+        box = {
+            "ref_high": ref_high,
+            "ref_low": ref_low,
+            "atr_box": atr_box,
+            "buy_stop": ref_high + buf_dist,
+            "sell_stop": ref_low - buf_dist,
+            "sl_dist": sl_dist,
+        }
+        self.daily_box_cache[key] = box
+        return box
+
+    def calc_volatility_parity_lot(self, info, equity: float, sl_dist: float) -> float:
+        usd_per_unit = (info.trade_tick_value / info.trade_tick_size) if info.trade_tick_size > 0 else info.trade_contract_size
+        risk_usd = max(10.0, equity * RISK_PER_TRADE_PCT)
+        raw_lot = risk_usd / max(sl_dist * usd_per_unit, 1e-6)
+        step = info.volume_step if info.volume_step > 0 else 0.01
+        lot = round(raw_lot / step) * step
+        return round(max(info.volume_min, min(0.25, lot)), 2)
+
+    def cycle(self):
+        acc = mt5.account_info()
+        if not acc:
+            return
+
+        positions = mt5.positions_get() or []
+        orders = mt5.orders_get() or []
+
+        self.sync_whipsaw_history()
+        self.enforce_per_symbol_oco(positions, orders)
+
+        engaged_syms = {p.symbol for p in positions} | {o.symbol for o in orders}
+        if len(engaged_syms) >= MAX_ACTIVE_ASSETS:
+            return
+
+        ref_tick = mt5.symbol_info_tick("XAUUSD")
+        srv_dt = datetime.fromtimestamp(ref_tick.time, tz=timezone.utc) if ref_tick else datetime.now(timezone.utc)
+
+        # Macro News Blackout (13:15 - 13:45 Server) & Session Cutoff (>= 17:00 Server)
+        if (srv_dt.hour == 13 and 15 <= srv_dt.minute <= 45) or srv_dt.hour >= 17 or srv_dt.hour < 4:
+            return
+
+        date_str = srv_dt.strftime("%Y-%m-%d")
+
+        for sym in CORE_TRIAD:
+            if len(engaged_syms) >= MAX_ACTIVE_ASSETS:
+                break
+            if sym in engaged_syms or (date_str, sym) in self.daily_traded:
+                continue
+            if self.whipsaw and not self.whipsaw.can_trade(sym):
+                continue
+
+            mt5.symbol_select(sym, True)
+            info = mt5.symbol_info(sym)
+            tick = mt5.symbol_info_tick(sym)
+            if not info or not tick:
+                continue
+
+            box = self.compute_session_box(sym, srv_dt)
+            if not box:
+                continue
+
+            micro = self.read_microstructure(sym)
+            delta_pct = float(micro.get("delta_pct", 0.0))
+            inside_chop = bool(micro.get("inside_poc_chop", False))
+            vah = float(micro.get("vah", box["ref_high"]))
+
+            sl_dist = box["sl_dist"]
+            lot = self.calc_volatility_parity_lot(info, acc.equity, sl_dist)
+            exp_time = int(time.time()) + 3600
+
+            # 1. Bearish Session Breakdown (high-conviction asymmetric liquidation leg)
+            if not inside_chop and delta_pct < 20.0 and tick.bid < box["sell_stop"]:
+                sl_sell = round(box["sell_stop"] + sl_dist, info.digits)
+                req = {
+                    "action": mt5.TRADE_ACTION_PENDING,
+                    "symbol": sym,
+                    "volume": lot,
+                    "type": mt5.ORDER_TYPE_SELL_STOP,
+                    "price": round(box["sell_stop"], info.digits),
+                    "sl": sl_sell,
+                    "deviation": 30,
+                    "magic": MAGIC_NUMBER,
+                    "type_time": mt5.ORDER_TIME_SPECIFIED,
+                    "expiration": exp_time,
+                    "type_filling": mt5.ORDER_FILLING_IOC,
+                    "comment": "NEXUS_V42_BOX_SELL",
+                }
+                res = mt5.order_send(req)
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    engaged_syms.add(sym)
+                    self.daily_traded.add((date_str, sym))
+                    logging.info(f"[V4.2 BOX SELL ARMED] {sym} {lot}L SELL_STOP @ {req['price']} | SL={sl_sell} | Delta={delta_pct:+.1f}% (#{res.order})")
+                    continue
+
+            # 2. Confirmed Bullish Breakout (ONLY when H1 EMA20>EMA50 AND Delta >= +25%)
+            h1_bull = self.get_h1_strong_bull(sym)
+            if not inside_chop and h1_bull and delta_pct >= 25.0 and tick.ask < box["buy_stop"]:
+                sl_buy = round(box["buy_stop"] - sl_dist, info.digits)
+                req = {
+                    "action": mt5.TRADE_ACTION_PENDING,
+                    "symbol": sym,
+                    "volume": lot,
+                    "type": mt5.ORDER_TYPE_BUY_STOP,
+                    "price": round(box["buy_stop"], info.digits),
+                    "sl": sl_buy,
+                    "deviation": 30,
+                    "magic": MAGIC_NUMBER,
+                    "type_time": mt5.ORDER_TIME_SPECIFIED,
+                    "expiration": exp_time,
+                    "type_filling": mt5.ORDER_FILLING_IOC,
+                    "comment": "NEXUS_V42_CONF_BUY",
+                }
+                res = mt5.order_send(req)
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    engaged_syms.add(sym)
+                    self.daily_traded.add((date_str, sym))
+                    logging.info(f"[V4.2 CONFIRMED BUY ARMED] {sym} {lot}L BUY_STOP @ {req['price']} | SL={sl_buy} | H1_BULL=True | Delta={delta_pct:+.1f}% (#{res.order})")
+                    continue
+
+            # 3. Secondary Mode: Bearish VAH Absorption Fade (DII Exhaustion back toward VPOC)
+            if sym in ("XAUUSD", "BTCUSD") and self.fade_engine and not inside_chop and tick.ask >= vah and tick.ask < box["buy_stop"]:
+                sig = self.fade_engine.evaluate_symbol(sym)
+                if sig and sig.get("side") == "SELL" and sig.get("confidence", 0.0) >= 0.65:
+                    sl_fade = round(box["buy_stop"] + (box["atr_box"] * 0.35), info.digits)
+                    tp_fade = round(float(sig["tp_price"]), info.digits)
+                    req = {
+                        "action": mt5.TRADE_ACTION_DEAL,
+                        "symbol": sym,
+                        "volume": lot,
+                        "type": mt5.ORDER_TYPE_SELL,
+                        "price": tick.bid,
+                        "sl": sl_fade,
+                        "tp": tp_fade,
+                        "deviation": 30,
+                        "magic": MAGIC_NUMBER,
+                        "type_filling": mt5.ORDER_FILLING_IOC,
+                        "comment": "NEXUS_V42_VAH_FADE",
+                    }
+                    res = mt5.order_send(req)
+                    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                        engaged_syms.add(sym)
+                        self.daily_traded.add((date_str, sym))
+                        logging.info(f"[V4.2 VAH DII FADE] {sym} {lot}L SELL @ {tick.bid} | SL={sl_fade} | TP(VPOC)={tp_fade} (#{res.order})")
+
+    def run(self):
+        if not self.connect_mt5():
+            sys.exit(1)
+        logging.info("=" * 90)
+        logging.info("NEXUS ENGINE V4.2 FINAL PRODUCTION ONLINE (CORE TRIAD | ASYMMETRIC LIQUIDITY | 1.69 PF)")
+        logging.info("=" * 90)
+        while True:
+            try:
+                self.cycle()
+            except Exception as e:
+                logging.error(f"Cycle exception: {e}")
+            time.sleep(30)
+
+if __name__ == "__main__":
+    QuantNexusV42Daemon().run()

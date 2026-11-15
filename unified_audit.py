@@ -34,7 +34,7 @@ for label, exe_path, is_portable in targets:
             print(f"[+] {label:<18} : Account #{login:<10} | Equity: ${equity:>8.2f} | {algo:<16} | Pos: {pos} | Pending: {pending}")
             
             # Print T2 details if it has orders
-            if login == 278041169:
+            if login == 278062039:
                 for o in mt5.orders_get() or []:
                     t_name = {mt5.ORDER_TYPE_BUY_STOP: "BUY_STOP", mt5.ORDER_TYPE_SELL_STOP: "SELL_STOP", mt5.ORDER_TYPE_BUY_LIMIT: "BUY_LIMIT", mt5.ORDER_TYPE_SELL_LIMIT: "SELL_LIMIT"}.get(o.type, str(o.type))
                     print(f"      -> Pending #{o.ticket}: {o.symbol:<7} {t_name:<10} vol={o.volume_current} @ {o.price_open}")

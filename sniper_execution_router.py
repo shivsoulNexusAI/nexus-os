@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus Execution Router: Institutional Order Dispatcher
 IOC Filling, Dynamic Spread Armor, Fractional Kelly Sizing, Atomic State Sync
 """
@@ -115,7 +115,7 @@ def route_silver_bullet_order(setup: SilverBulletSetup, dry_run: bool = True) ->
         "sl": float(setup.stop_loss),
         "tp": float(setup.take_profit),
         "deviation": 10,
-        "magic": 278017866,
+        "magic": 278062038,
         "comment": f"SB_{setup.killzone[:6]}",
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": filling_mode,
@@ -161,7 +161,7 @@ if __name__ == "__main__":
     from silver_bullet_feeder import init_mt5, scan_fleet
     from silver_bullet_sniper import evaluate_silver_bullet, calculate_atr
     
-    print("[*] Testing Execution Router in DRY-RUN mode against Account 278017866...")
+    print("[*] Testing Execution Router in DRY-RUN mode against Account 278062038...")
     if not init_mt5():
         print("[-] MT5 init failed.")
         exit(1)

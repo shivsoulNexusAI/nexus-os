@@ -1,0 +1,96 @@
+import time
+import logging
+from pathlib import Path
+import numpy as np
+import MetaTrader5 as mt5
+
+TERMINAL_PATH = r"C:/MT5_Quant_278017866/terminal64.exe"
+LOG_PATH = Path(r"C:\Quant-Nexus-Eng\breakeven_engine.log")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] [BE-V4.2] %(message)s",
+    handlers=[logging.FileHandler(LOG_PATH, encoding="utf-8")],
+)
+
+HARVESTED_TICKETS = set()
+
+def get_m15_atr(sym: str) -> float:
+    rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M15, 1, 25)
+    if rates is None or len(rates) < 20:
+        return 0.0
+    h = np.array([r["high"] for r in rates], dtype=float)
+    l = np.array([r["low"] for r in rates], dtype=float)
+    c = np.array([r["close"] for r in rates], dtype=float)
+    tr = np.maximum(h[1:] - l[1:], np.maximum(np.abs(h[1:] - c[:-1]), np.abs(l[1:] - c[:-1])))
+    return float(np.mean(tr[-20:]))
+
+def manage_positions():
+    positions = mt5.positions_get() or []
+    for p in positions:
+        if p.sl <= 0:
+            continue
+        info = mt5.symbol_info(p.symbol)
+        tick = mt5.symbol_info_tick(p.symbol)
+        if not info or not tick:
+            continue
+
+        is_buy = (p.type == mt5.POSITION_TYPE_BUY)
+        cur_price = tick.bid if is_buy else tick.ask
+        init_risk = abs(p.price_open - p.sl)
+        if init_risk <= 0:
+            continue
+
+        cur_gain = (cur_price - p.price_open) if is_buy else (p.price_open - cur_price)
+        r_mult = cur_gain / init_risk
+
+        # Tier 1: +0.80R Fast Breakeven Lock (+0.12R cushion)
+        if r_mult >= 0.80:
+            be_sl = round(p.price_open + (0.12 * init_risk) if is_buy else p.price_open - (0.12 * init_risk), info.digits)
+            needs_be = (is_buy and p.sl < be_sl) or (not is_buy and p.sl > be_sl)
+            if needs_be:
+                res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": be_sl, "tp": p.tp})
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    logging.info(f"[TIER 1 +0.80R BE LOCK] {p.symbol} #{p.ticket} SL -> {be_sl}")
+
+        # Tier 2: +1.50R 50% Partial Harvest + Runner Ratchet
+        if r_mult >= 1.50 and p.ticket not in HARVESTED_TICKETS and p.volume >= (info.volume_min * 2):
+            close_vol = round(p.volume * 0.5, 2)
+            close_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
+            res = mt5.order_send({
+                "action": mt5.TRADE_ACTION_DEAL,
+                "position": p.ticket,
+                "symbol": p.symbol,
+                "volume": close_vol,
+                "type": close_type,
+                "price": cur_price,
+                "deviation": 30,
+                "type_filling": mt5.ORDER_FILLING_IOC,
+                "comment": "NEXUS_V42_T2_HARVEST",
+            })
+            if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                HARVESTED_TICKETS.add(p.ticket)
+                ratch_sl = round(p.price_open + (0.90 * init_risk) if is_buy else p.price_open - (0.90 * init_risk), info.digits)
+                mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": ratch_sl, "tp": 0.0})
+                logging.info(f"[TIER 2 +1.50R HARVEST] {p.symbol} #{p.ticket} banked {close_vol}L | Runner SL -> {ratch_sl}")
+
+        # Tier 3: 1.25x M15 ATR Chandelier Trail for Uncapped Runners (>= +1.80R)
+        if r_mult >= 1.80:
+            atr = get_m15_atr(p.symbol)
+            if atr > 0:
+                chand_sl = round(cur_price - (1.25 * atr) if is_buy else cur_price + (1.25 * atr), info.digits)
+                better = (is_buy and chand_sl > p.sl) or (not is_buy and chand_sl < p.sl)
+                if better:
+                    res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": chand_sl, "tp": 0.0})
+                    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                        logging.info(f"[TIER 3 CHANDELIER TRAIL] {p.symbol} #{p.ticket} Runner SL -> {chand_sl} (+{r_mult:.2f}R)")
+
+if __name__ == "__main__":
+    if mt5.initialize(path=TERMINAL_PATH, portable=False):
+        logging.info("Breakeven & Chandelier Runner Engine V4.2 Online.")
+        while True:
+            try:
+                manage_positions()
+            except Exception as e:
+                logging.error(f"BE loop error: {e}")
+            time.sleep(2)

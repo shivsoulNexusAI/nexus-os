@@ -1,0 +1,10 @@
+{
+  "date": "2026-11-13",
+  "start_equity": 1144.29,
+  "halted": false,
+  "t1_done": [],
+  "t2_done": [],
+  "symbol_cooldowns": {
+    "US30": 1794545459.308508
+  }
+}

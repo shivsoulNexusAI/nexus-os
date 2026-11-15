@@ -1,509 +1,463 @@
-﻿import os
-import sys
-import time
+﻿#!/usr/bin/env python3
+"""
+NEXUS OMEGA APEX FINAL PRODUCTION DAEMON (v44.2 Multi-Terminal)
+- CLI Isolated: --terminal, --portable, --magic, --tag
+- Strategy: Anchored Asian Box (00:00-03:45 UTC) + H1 EMA20/50 + PDH/PDL Clearance + M15 VPOC Anti-Chop
+- Execution: Pre-Armed Coiled BUY_STOP / SELL_STOP at 04:00 UTC (with 13:15-13:45 UTC US News HMR Cancel/Re-Arm)
+- Session Gates: US30 (13:46-16:00 UTC NY Cash Open), XAUUSD (07:00-16:00 UTC London/NY), FX/BTC (04:00-16:00 UTC)
+- Risk & Harvest: 0.75% Risk/Trade, Max-1 USD FX Correlation Cap, -2.0% Daily Circuit Breaker, T1 (+0.85R BE), T2 (+1.60R 50% Harvest), EOD Flat (22:45 UTC)
+"""
+
+import argparse
 import json
 import logging
-from datetime import datetime, timezone, timedelta
+import math
+import os
+import sys
+import time
+from datetime import datetime, timezone
 from pathlib import Path
+
+import MetaTrader5 as mt5
 import numpy as np
 import pandas as pd
-import httpx
-import MetaTrader5 as mt5
+import urllib.request
 
 BASE_DIR = Path(r"C:\Quant-Nexus-Eng")
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
-LOG_FILE = BASE_DIR / "nexus_omega_apex.log"
-STATE_FILE = BASE_DIR / "omega_apex_state.json"
-MICRO_STATE = BASE_DIR / "microstructure_state.json"
-TG_CONFIG = BASE_DIR / "t2_telegram_config.json"
+SYMBOLS = ["XAUUSD", "BTCUSD", "US30", "EURUSD", "USDCHF", "USDCAD"]
+USD_CORR_BASES = {"EURUSD", "USDCHF", "USDCAD"}
 
-MAGIC_NUMBER = 44044
-BASE_RISK_PCT = 0.013
-DAILY_DD_LIMIT_PCT = 0.025  # 2.5% daily equity circuit breaker
-PORTFOLIO_6 = ["XAUUSD", "BTCUSD", "US30", "EURUSD", "USDCHF", "USDCAD"]
-USD_CORRELATED = {"EURUSD", "USDCHF", "USDCAD"}
-
-MICRO_CFG = {
-    "XAUUSD": {"step_mult": 25,  "lookback_sec": 300, "absorb_hurdle": 22.0},
-    "BTCUSD": {"step_mult": 100, "lookback_sec": 300, "absorb_hurdle": 22.0},
-    "US30":   {"step_mult": 20,  "lookback_sec": 300, "absorb_hurdle": 22.0},
-    "EURUSD": {"step_mult": 5,   "lookback_sec": 300, "absorb_hurdle": 24.0},
-    "USDCHF": {"step_mult": 5,   "lookback_sec": 300, "absorb_hurdle": 24.0},
-    "USDCAD": {"step_mult": 5,   "lookback_sec": 300, "absorb_hurdle": 24.0},
-}
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] [OMEGA-APEX] %(message)s",
-    handlers=[
-        logging.FileHandler(str(LOG_FILE), encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
-)
-log = logging.getLogger("OmegaApexElite")
+RISK_PER_TRADE = 0.0075
+MAX_DAILY_DD = 0.020
+MAX_CONCURRENT_POS = 3
+POLL_SECONDS = 60
 
 
-def send_tg(msg: str):
-    if not TG_CONFIG.exists():
+def parse_args():
+    p = argparse.ArgumentParser(description="Nexus Omega Apex Final Production Daemon")
+    p.add_argument("--terminal", default=r"C:/MT5_Quant_278061453/terminal64.exe", help="Path to terminal64.exe")
+    p.add_argument("--portable", action="store_true", help="Initialize MT5 in portable mode")
+    p.add_argument("--magic", type=int, default=44044, help="Unique Magic Number for this terminal")
+    p.add_argument("--tag", default="T1_QUANT", help="Instance tag for logs, state, and Telegram alerts")
+    return p.parse_args()
+
+
+def setup_logger(tag: str) -> logging.Logger:
+    log_path = BASE_DIR / f"nexus_omega_apex_{tag}.log"
+    logger = logging.getLogger(f"omega_{tag}")
+    logger.setLevel(logging.INFO)
+    logger.handlers.clear()
+    fmt = logging.Formatter(f"%(asctime)s [UTC] [{tag}] %(levelname)s: %(message)s")
+    fh = logging.FileHandler(log_path, encoding="utf-8")
+    fh.setFormatter(fmt)
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setFormatter(fmt)
+    logger.addHandler(fh)
+    logger.addHandler(sh)
+    return logger
+
+
+def send_telegram(tag: str, msg: str, log: logging.Logger):
+    cfg_path = BASE_DIR / "t2_telegram_config.json"
+    if not cfg_path.exists():
         return
     try:
-        cfg = json.loads(TG_CONFIG.read_text(encoding="utf-8"))
-        token, chat_id = cfg.get("bot_token"), cfg.get("authorized_chat_id")
-        if token and chat_id:
-            with httpx.Client(timeout=5.0) as c:
-                c.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                       json={"chat_id": chat_id, "text": msg, "parse_mode": "HTML"})
-    except Exception:
-        pass
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        token = cfg.get("bot_token") or cfg.get("token")
+        chat_id = cfg.get("chat_id")
+        if not token or not chat_id:
+            return
+        payload = json.dumps({"chat_id": chat_id, "text": f"[{tag}] {msg}"}).encode("utf-8")
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        urllib.request.urlopen(req, timeout=5)
+    except Exception as exc:
+        log.warning("Telegram notify skipped: %s", exc)
 
 
-class OmegaApexEliteEngine:
-    """
-    Omega Apex Elite Production Daemon (Magic=44044):
-      1. M5-Verified Variant #4 Coiled Asian Box (00:00..03:45 UTC, 3.4/2.6 ATR bounds) + H1 EMA20/50 Trend
-      2. Live Quote-Shift Footprint Delta + 5m VPOC/VAH/VAL Anti-Chop & Absorption Exit Protection
-      3. Dynamic Killzone Re-Arming (London 07:00-10:59 UTC & NY 13:45-15:59 UTC)
-      4. Closed-Loop Deal Telemetry Sync, Strict Per-Symbol OCO, USD Correlation Cap & 2.5% Daily Circuit Breaker
-    """
+def load_state(state_file: Path, today_str: str, current_eq: float) -> dict:
+    if state_file.exists():
+        try:
+            st = json.loads(state_file.read_text(encoding="utf-8"))
+            if st.get("date") == today_str:
+                return st
+        except Exception:
+            pass
+    st = {
+        "date": today_str,
+        "start_equity": current_eq,
+        "halted": False,
+        "traded_bases": [],
+        "t1_done": [],
+        "t2_done": [],
+        "peaks": {},
+    }
+    save_state(state_file, st)
+    return st
 
-    def __init__(self):
-        self.state = self._load_state()
-        self.last_hb_min = -1
 
-    def _load_state(self) -> dict:
-        if STATE_FILE.exists():
-            try:
-                return json.loads(STATE_FILE.read_text(encoding="utf-8"))
-            except Exception:
-                pass
-        return {
-            "day_str": "",
-            "day_start_equity": 0.0,
-            "circuit_tripped": False,
-            "win_streak": {},
-            "consec_losses": {},
-            "skip_date": {},
-            "processed_deals": [],
-            "t1_done": [],
-            "t2_done": [],
-            "absorb_locked": [],
-            "peak_dist": {},
-            "sl_dist": {},
-        }
+def save_state(state_file: Path, st: dict):
+    tmp = state_file.with_suffix(".tmp")
+    tmp.write_text(json.dumps(st, indent=2), encoding="utf-8")
+    tmp.replace(state_file)
 
-    def _save_state(self):
-        tmp = STATE_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
-        tmp.replace(STATE_FILE)
 
-    def ensure_connected(self) -> bool:
-        if mt5.terminal_info() is not None and mt5.account_info() is not None:
+def ensure_mt5(terminal_path: str, portable: bool, log: logging.Logger) -> bool:
+    ti = mt5.terminal_info()
+    ai = mt5.account_info()
+    if ti is not None and ai is not None and ti.connected:
+        return True
+    mt5.shutdown()
+    if mt5.initialize(path=terminal_path, portable=portable, timeout=15000):
+        ai = mt5.account_info()
+        if ai is not None:
+            log.info("Connected MT5 Account #%s | Balance=$%.2f | Equity=$%.2f", ai.login, ai.balance, ai.equity)
             return True
-        for attempt in range(1, 4):
-            if mt5.initialize(path=TERMINAL, portable=False) and mt5.account_info() is not None:
-                log.info("MT5 IPC connected (attempt %d).", attempt)
-                return True
-            time.sleep(2.0 * attempt)
-        log.error("MT5 IPC connection failed: %s", mt5.last_error())
-        return False
+    log.error("MT5 initialize failed for %s (portable=%s): %s", terminal_path, portable, mt5.last_error())
+    return False
 
-    def resolve_symbol(self, base: str) -> str | None:
-        if mt5.symbol_info(base) is not None:
-            return base
-        for s in (mt5.symbols_get() or []):
-            if s.name.startswith(base) and len(s.name) <= len(base) + 2 and s.trade_mode == mt5.SYMBOL_TRADE_MODE_FULL:
-                return s.name
+
+def resolve_symbol(base: str) -> str | None:
+    if mt5.symbol_info(base) is not None:
+        mt5.symbol_select(base, True)
+        return base
+    for s in (mt5.symbols_get() or []):
+        if s.name.startswith(base) and len(s.name) <= len(base) + 3 and s.trade_mode == mt5.SYMBOL_TRADE_MODE_FULL:
+            mt5.symbol_select(s.name, True)
+            return s.name
+    return None
+
+
+def base_of_symbol(sym: str) -> str:
+    for b in SYMBOLS:
+        if sym.startswith(b):
+            return b
+    return sym
+
+
+def in_session_window(base: str, hour: int, minute: int) -> bool:
+    # Block US News HMR window (13:15-13:45 UTC) globally
+    if hour == 13 and 15 <= minute <= 45:
+        return False
+    if base == "US30":
+        return (hour == 13 and minute >= 46) or (14 <= hour <= 16)
+    if base == "XAUUSD":
+        return 7 <= hour <= 16
+    return 4 <= hour <= 16
+
+
+def compute_lot(sym: str, sl_dist: float, equity: float) -> float:
+    info = mt5.symbol_info(sym)
+    if info is None or sl_dist <= 0 or info.trade_tick_size <= 0 or info.trade_tick_value <= 0:
+        return 0.0
+    risk_usd = equity * RISK_PER_TRADE
+    ticks = sl_dist / info.trade_tick_size
+    loss_per_lot = ticks * info.trade_tick_value
+    if loss_per_lot <= 0:
+        return info.volume_min
+    raw_lot = risk_usd / loss_per_lot
+    step = info.volume_step if info.volume_step > 0 else 0.01
+    lot = math.floor(raw_lot / step) * step
+    lot = max(info.volume_min, min(info.volume_max, round(lot, 2)))
+    return lot
+
+
+def evaluate_symbol(base: str, sym: str, today_date) -> dict | None:
+    info = mt5.symbol_info(sym)
+    tick = mt5.symbol_info_tick(sym)
+    if info is None or tick is None:
         return None
 
-    def get_footprint_microstructure(self, sym: str, base: str) -> dict | None:
-        # 1. Try fresh microstructure_state.json first (< 15s old)
-        if MICRO_STATE.exists():
-            try:
-                raw = json.loads(MICRO_STATE.read_text(encoding="utf-8"))
-                ts = datetime.fromisoformat(raw.get("timestamp", ""))
-                if (datetime.now() - ts).total_seconds() <= 15.0 and base in raw.get("fleet", {}):
-                    return raw["fleet"][base]
-            except Exception:
-                pass
+    r15 = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M15, 0, 140)
+    rd1 = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_D1, 0, 5)
+    if r15 is None or rd1 is None or len(r15) < 60 or len(rd1) < 2:
+        return None
 
-        # 2. Direct live Quote-Shift Tick Rule + 5m VPOC/VAH/VAL fallback
-        cfg = MICRO_CFG.get(base, {"step_mult": 10, "lookback_sec": 300, "absorb_hurdle": 22.0})
+    df = pd.DataFrame(r15)
+    df["dt"] = pd.to_datetime(df["time"], unit="s", utc=True)
+    df["date"] = df["dt"].dt.date
+
+    prev_c = df["close"].shift(1)
+    tr = np.maximum(df["high"] - df["low"], np.maximum((df["high"] - prev_c).abs(), (df["low"] - prev_c).abs()))
+    df["atr20"] = tr.rolling(20).mean().bfill()
+    df["atr56"] = tr.rolling(56).mean().bfill()
+    df["ema20"] = df["close"].ewm(span=80, adjust=False).mean()
+    df["ema50"] = df["close"].ewm(span=200, adjust=False).mean()
+
+    typical = (df["high"] + df["low"] + df["close"]) / 3.0
+    vol = df["tick_volume"].astype(float)
+    df["vol_ratio"] = vol / np.maximum(vol.rolling(20).mean(), 1.0)
+    vpoc = (typical * vol).rolling(16).sum() / np.maximum(vol.rolling(16).sum(), 1.0)
+    va_std = typical.rolling(16).std().fillna(df["atr20"])
+    df["chop"] = (df["close"] - vpoc).abs() <= (0.20 * va_std)
+
+    today_df = df[df["date"] == today_date]
+    if len(today_df) < 16:
+        return None
+
+    ref = today_df.iloc[:16]  # 00:00-03:45 UTC Anchored Asian Box
+    box_hi = float(ref["high"].max())
+    box_lo = float(ref["low"].min())
+    atr_b = float(ref["atr20"].iloc[-1])
+    atr_56 = float(ref["atr56"].iloc[-1])
+    box_rng = box_hi - box_lo
+    max_mult = 3.4 if "XAU" in base else 2.6
+
+    if not ((atr_b * 0.60) <= box_rng <= (atr_56 * max_mult)):
+        return None
+
+    buf = atr_b * 0.40
+    sl_dist = atr_b * 1.25
+    buy_stop = round(box_hi + buf, info.digits)
+    sell_stop = round(box_lo - buf, info.digits)
+
+    pdh = float(rd1[-2]["high"])
+    pdl = float(rd1[-2]["low"])
+    pdh_clear = (pdh <= buy_stop) or ((pdh - buy_stop) >= sl_dist * 0.90)
+    pdl_clear = (pdl >= sell_stop) or ((sell_stop - pdl) >= sl_dist * 0.90)
+
+    prev = df.iloc[-2]
+    if bool(prev["chop"]):
+        return None
+
+    bull = (prev["close"] > prev["ema20"]) and (prev["ema20"] > prev["ema50"]) and pdh_clear
+    bear = (prev["close"] < prev["ema20"]) and (prev["ema20"] < prev["ema50"]) and pdl_clear
+    if not (bull or bear):
+        return None
+
+    direction = "BUY" if bull else "SELL"
+    if direction == "BUY" and tick.ask >= buy_stop:
+        return None
+    if direction == "SELL" and tick.bid <= sell_stop:
+        return None
+
+    edge_score = round(float(prev["vol_ratio"]) * 50.0 + (15.0 if (bull and pdh <= buy_stop) or (bear and pdl >= sell_stop) else 5.0), 1)
+    return {
+        "base": base,
+        "symbol": sym,
+        "direction": direction,
+        "buy_stop": buy_stop,
+        "sell_stop": sell_stop,
+        "sl_dist": sl_dist,
+        "vol_ratio": float(prev["vol_ratio"]),
+        "edge_score": edge_score,
+    }
+
+
+def manage_open_positions(magic: int, tag: str, st: dict, state_file: Path, now_utc: datetime, log: logging.Logger):
+    positions = [p for p in (mt5.positions_get() or []) if p.magic == magic]
+    eod_flat = (now_utc.hour > 22) or (now_utc.hour == 22 and now_utc.minute >= 45)
+
+    for p in positions:
+        sym = p.symbol
         info = mt5.symbol_info(sym)
-        if not info:
-            return None
-        now = datetime.now()
-        ticks = mt5.copy_ticks_range(sym, now - timedelta(seconds=cfg["lookback_sec"]), now, mt5.COPY_TICKS_ALL)
-        if ticks is None or len(ticks) < 15:
-            return None
+        tick = mt5.symbol_info_tick(sym)
+        if info is None or tick is None:
+            continue
 
-        bids = ticks["bid"].astype(np.float64)
-        asks = ticks["ask"].astype(np.float64)
-        vols = ticks["volume_ext"].astype(np.float64) if "volume_ext" in ticks.dtype.names else ticks["volume"].astype(np.float64)
-        vols = np.where(vols > 0, vols, 1.0)
+        if eod_flat:
+            close_type = mt5.ORDER_TYPE_SELL if p.type == mt5.POSITION_TYPE_BUY else mt5.ORDER_TYPE_BUY
+            px = tick.bid if close_type == mt5.ORDER_TYPE_SELL else tick.ask
+            mt5.order_send({
+                "action": mt5.TRADE_ACTION_DEAL,
+                "symbol": sym,
+                "volume": p.volume,
+                "type": close_type,
+                "position": p.ticket,
+                "price": px,
+                "deviation": 30,
+                "magic": magic,
+                "comment": f"{tag}_EOD_EXIT",
+            })
+            log.info("[EOD FLAT] Closed #%s %s %.2fL @ %s", p.ticket, sym, p.volume, px)
+            continue
 
-        mid_shift = (np.diff(bids) + np.diff(asks)) * 0.5
-        step_vols = vols[1:]
-        buy_vol = float(np.sum(step_vols[mid_shift > 0]))
-        sell_vol = float(np.sum(step_vols[mid_shift < 0]))
-        active_vol = buy_vol + sell_vol
-        delta_pct = (buy_vol - sell_vol) / active_vol * 100.0 if active_vol > 0 else 0.0
+        sl_dist = abs(p.price_open - p.sl) if p.sl > 0 else 0.0
+        if sl_dist <= 0:
+            continue
 
-        step = info.point * cfg["step_mult"]
-        binned = np.round(np.round(bids[1:] / step) * step, info.digits)
-        uniq, inv = np.unique(binned, return_inverse=True)
-        bvols = np.bincount(inv, weights=step_vols)
-        poc_idx = int(np.argmax(bvols))
-        vpoc = float(uniq[poc_idx])
-        mid_now = float((bids[-1] + asks[-1]) * 0.5)
-        inside_poc_chop = abs(mid_now - vpoc) <= (step * 1.5)
+        t_key = str(p.ticket)
+        is_buy = (p.type == mt5.POSITION_TYPE_BUY)
+        cur_px = tick.bid if is_buy else tick.ask
+        gain = (cur_px - p.price_open) if is_buy else (p.price_open - cur_px)
+        prev_peak = float(st["peaks"].get(t_key, 0.0))
+        peak = max(prev_peak, gain)
+        st["peaks"][t_key] = peak
 
-        return {
-            "vpoc": round(vpoc, info.digits),
-            "current_mid": round(mid_now, info.digits),
-            "inside_poc_chop": bool(inside_poc_chop),
-            "ticks": int(len(ticks)),
-            "delta_pct": round(delta_pct, 2),
-        }
+        # T1 (+0.85R -> Move SL to BE + 0.12R)
+        if t_key not in st["t1_done"] and gain >= sl_dist * 0.85:
+            lock_be = round(p.price_open + sl_dist * 0.12, info.digits) if is_buy else round(p.price_open - sl_dist * 0.12, info.digits)
+            if (is_buy and lock_be > p.sl) or ((not is_buy) and lock_be < p.sl):
+                res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "symbol": sym, "position": p.ticket, "sl": lock_be, "tp": p.tp})
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    st["t1_done"].append(t_key)
+                    log.info("[T1 BE LOCK] #%s %s SL -> %s (+0.12R)", p.ticket, sym, lock_be)
 
-    def sync_closed_deals_and_circuit_breaker(self, acc, now_utc: datetime) -> bool:
-        today_str = now_utc.strftime("%Y-%m-%d")
-        if self.state.get("day_str") != today_str or self.state.get("day_start_equity", 0.0) <= 0:
-            self.state["day_str"] = today_str
-            self.state["day_start_equity"] = float(acc.equity)
-            self.state["circuit_tripped"] = False
-            log.info("[DAILY RESET] %s | Start Equity=$%.2f", today_str, acc.equity)
-
-        # Sync closed Magic=44044 deals to update win_streak & 2-loss daily skip
-        deals = mt5.history_deals_get(now_utc - timedelta(days=3), now_utc + timedelta(hours=2)) or []
-        seen = set(self.state.get("processed_deals", []))
-        for d in sorted(deals, key=lambda x: x.time):
-            if d.magic != MAGIC_NUMBER or d.entry not in (mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_OUT_BY):
-                continue
-            if d.ticket in seen:
-                continue
-            seen.add(d.ticket)
-            base = next((b for b in PORTFOLIO_6 if d.symbol.startswith(b)), d.symbol)
-            net = float(d.profit + d.swap + d.commission)
-            deal_day = datetime.fromtimestamp(d.time, tz=timezone.utc).strftime("%Y-%m-%d")
-            if net > 0:
-                self.state["win_streak"][base] = self.state["win_streak"].get(base, 0) + 1
-                self.state["consec_losses"][base] = 0
-            elif net < 0:
-                self.state["win_streak"][base] = 0
-                cl = self.state["consec_losses"].get(base, 0) + 1
-                self.state["consec_losses"][base] = cl
-                if cl >= 2:
-                    self.state["skip_date"][base] = deal_day
-                    self.state["consec_losses"][base] = 0
-                    log.warning("[2-LOSS COOLDOWN] %s paused for %s after 2 consecutive losses.", base, deal_day)
-            log.info("[DEAL SYNC] #%s %s Net=$%+.2f | Streak=%d", d.ticket, base, net, self.state["win_streak"].get(base, 0))
-
-        self.state["processed_deals"] = list(seen)[-500:]
-
-        # Check 2.5% Daily Equity Circuit Breaker
-        start_eq = float(self.state["day_start_equity"])
-        dd_pct = (start_eq - float(acc.equity)) / max(start_eq, 1.0)
-        if dd_pct >= DAILY_DD_LIMIT_PCT:
-            if not self.state["circuit_tripped"]:
-                self.state["circuit_tripped"] = True
-                log.critical("[CIRCUIT BREAKER TRIPPED] Daily DD %.2f%% >= %.2f%% ($%.2f -> $%.2f). Halting new entries!",
-                             dd_pct * 100, DAILY_DD_LIMIT_PCT * 100, start_eq, acc.equity)
-                send_tg(f"<b>OMEGA APEX CIRCUIT BREAKER</b>\nDaily DD: <code>-{dd_pct*100:.2f}%</code>\nNew entries halted for {today_str}.")
-            self._save_state()
-            return False
-
-        self._save_state()
-        return True
-
-    def compute_setup(self, sym: str, base: str) -> dict | None:
-        mt5.symbol_select(sym, True)
-        info = mt5.symbol_info(sym)
-        r15 = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M15, 0, 160)
-        rh1 = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_H1, 0, 80)
-        rd1 = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_D1, 0, 5)
-        if not info or r15 is None or len(r15) < 80 or rh1 is None or len(rh1) < 55 or rd1 is None or len(rd1) < 2:
-            return None
-
-        max_mult = 3.4 if "XAU" in base else 2.6
-        df = pd.DataFrame(r15)
-        df["dt"] = pd.to_datetime(df["time"], unit="s", utc=True)
-        df["date"] = df["dt"].dt.date
-
-        dfh1 = pd.DataFrame(rh1)
-        dfh1["ema20"] = dfh1["close"].ewm(span=20, adjust=False).mean()
-        dfh1["ema50"] = dfh1["close"].ewm(span=50, adjust=False).mean()
-        h1_prev = dfh1.iloc[-2]
-        h1_bull = bool((h1_prev["close"] > h1_prev["ema20"]) and (h1_prev["ema20"] > h1_prev["ema50"]))
-        h1_bear = bool((h1_prev["close"] < h1_prev["ema20"]) and (h1_prev["ema20"] < h1_prev["ema50"]))
-
-        pdh = float(rd1[-2]["high"])
-        pdl = float(rd1[-2]["low"])
-
-        prev_c = df["close"].shift(1)
-        tr = np.maximum(df["high"] - df["low"], np.maximum((df["high"] - prev_c).abs(), (df["low"] - prev_c).abs()))
-        df["atr20"] = tr.rolling(20).mean().bfill()
-        df["atr56"] = tr.rolling(56).mean().bfill()
-
-        typical = (df["high"] + df["low"] + df["close"]) / 3.0
-        vol = df["tick_volume"].astype(float)
-        vol_ratio_prev = float((vol / np.maximum(vol.rolling(20).mean(), 1.0)).iloc[-2])
-        vpoc_m15 = (typical * vol).rolling(16).sum() / np.maximum(vol.rolling(16).sum(), 1.0)
-        va_std = typical.rolling(16).std().fillna(df["atr20"])
-        m15_chop_prev = bool(abs(df["close"].iloc[-2] - vpoc_m15.iloc[-2]) <= (0.20 * va_std.iloc[-2]))
-
-        today_date = df["date"].iloc[-1]
-        today_df = df[df["date"] == today_date]
-        if len(today_df) < 16:
-            return None
-
-        ref = today_df.iloc[:16]
-        ref_high = float(ref["high"].max())
-        ref_low = float(ref["low"].min())
-        atr_box = float(ref["atr20"].iloc[-1])
-        atr_56 = float(ref["atr56"].iloc[-1])
-        box_rng = ref_high - ref_low
-        box_ready = (atr_box > 0) and (atr_56 > 0) and ((atr_box * 0.60) <= box_rng <= (atr_56 * max_mult))
-
-        buf_dist = atr_box * 0.40
-        sl_dist = atr_box * 1.25
-        buy_stop = round(ref_high + buf_dist, info.digits)
-        sell_stop = round(ref_low - buf_dist, info.digits)
-
-        fp = self.get_footprint_microstructure(sym, base)
-        tick_delta = float(fp["delta_pct"]) if fp else 0.0
-        tick_chop = bool(fp["inside_poc_chop"]) if fp else False
-
-        return {
-            "base": base,
-            "sym": sym,
-            "info": info,
-            "today_str": str(today_date),
-            "box_ready": box_ready,
-            "buy_stop": buy_stop,
-            "sell_stop": sell_stop,
-            "sl_dist": sl_dist,
-            "h1_bull": h1_bull,
-            "h1_bear": h1_bear,
-            "m15_chop": m15_chop_prev,
-            "tick_chop": tick_chop,
-            "vol_ratio": vol_ratio_prev,
-            "tick_delta": tick_delta,
-            "pdh": pdh,
-            "pdl": pdl,
-        }
-
-    def calc_lot(self, base: str, info, equity: float, sl_dist: float) -> float:
-        usd_per_unit = (info.trade_tick_value / info.trade_tick_size) if info.trade_tick_size > 0 else info.trade_contract_size
-        ws = self.state["win_streak"].get(base, 0)
-        scale = 1.35 if ws >= 1 else 1.0
-        risk_usd = equity * BASE_RISK_PCT * scale
-        raw_lot = risk_usd / max(sl_dist * usd_per_unit, 1e-6)
-        step = info.volume_step if info.volume_step > 0 else 0.01
-        return max(info.volume_min, min(0.30, round(raw_lot / step) * step))
-
-    def manage_positions_and_orders(self, positions, orders, now_utc: datetime):
-        my_pos = [p for p in positions if p.magic == MAGIC_NUMBER]
-        my_ord = [o for o in orders if o.magic == MAGIC_NUMBER]
-
-        in_kz = (7 <= now_utc.hour <= 15)
-        in_news = (now_utc.hour == 13 and 15 <= now_utc.minute <= 45)
-        pos_syms = {p.symbol for p in my_pos}
-
-        # Strict per-symbol OCO: max 1 pending order per symbol, cancel if position open or outside KZ/news
-        seen_ord_syms = set()
-        for o in my_ord:
-            if (o.symbol in pos_syms) or (o.symbol in seen_ord_syms) or (not in_kz) or in_news:
-                mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
-                log.info("[OCO CANCEL] Removed pending %s #%s", o.symbol, o.ticket)
-            else:
-                seen_ord_syms.add(o.symbol)
-
-        for p in my_pos:
-            info = mt5.symbol_info(p.symbol)
-            tick = mt5.symbol_info_tick(p.symbol)
-            if not info or not tick or p.sl == 0:
-                continue
-            t_key = str(p.ticket)
-            base = next((b for b in PORTFOLIO_6 if p.symbol.startswith(b)), p.symbol)
-            sl_dist = self.state["sl_dist"].get(t_key, abs(p.price_open - p.sl))
-            self.state["sl_dist"][t_key] = sl_dist
-
-            is_buy = (p.type == mt5.POSITION_TYPE_BUY)
-            cur_price = tick.bid if is_buy else tick.ask
-            gain = (cur_price - p.price_open) if is_buy else (p.price_open - cur_price)
-            peak = max(float(self.state["peak_dist"].get(t_key, 0.0)), gain)
-            self.state["peak_dist"][t_key] = peak
-
-            # 1. EOD 22:45 UTC close for non-T2 positions
-            if t_key not in self.state["t2_done"] and now_utc.hour == 22 and now_utc.minute >= 45:
+        # T2 (+1.60R -> 50% Partial Harvest + Lock SL at +1.05R)
+        if t_key not in st["t2_done"] and gain >= sl_dist * 1.60:
+            step = info.volume_step if info.volume_step > 0 else 0.01
+            half_vol = math.floor((p.volume * 0.50) / step) * step
+            if half_vol >= info.volume_min and (p.volume - half_vol) >= info.volume_min:
                 close_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
+                px = tick.bid if is_buy else tick.ask
                 mt5.order_send({
-                    "action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol, "volume": p.volume,
-                    "type": close_type, "position": p.ticket, "price": cur_price,
-                    "deviation": 30, "magic": MAGIC_NUMBER, "comment": "APEX_EOD_EXIT",
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": sym,
+                    "volume": round(half_vol, 2),
+                    "type": close_type,
+                    "position": p.ticket,
+                    "price": px,
+                    "deviation": 30,
+                    "magic": magic,
+                    "comment": f"{tag}_T2_HARVEST",
                 })
-                log.info("[EOD EXIT] Closed non-T2 %s #%s @ %s", p.symbol, p.ticket, cur_price)
-                continue
+            lock_t2 = round(p.price_open + sl_dist * 1.05, info.digits) if is_buy else round(p.price_open - sl_dist * 1.05, info.digits)
+            if (is_buy and lock_t2 > p.sl) or ((not is_buy) and lock_t2 < p.sl):
+                mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "symbol": sym, "position": p.ticket, "sl": lock_t2, "tp": p.tp})
+            st["t2_done"].append(t_key)
+            log.info("[T2 HARVEST] #%s %s 50%% harvested & SL locked -> %s (+1.05R)", p.ticket, sym, lock_t2)
+            send_telegram(tag, f"T2 HARVEST {sym} #{p.ticket} @ {cur_px} | SL locked +1.05R", log)
 
-            # 2. Footprint Absorption Profit Lock (>= +0.75R + sharp opposite Quote-Shift Delta flip)
-            if t_key not in self.state["absorb_locked"] and gain >= sl_dist * 0.75:
-                fp = self.get_footprint_microstructure(p.symbol, base)
-                hurdle = MICRO_CFG.get(base, {}).get("absorb_hurdle", 22.0)
-                if fp:
-                    d_pct = float(fp["delta_pct"])
-                    absorbed = (is_buy and d_pct <= -hurdle) or ((not is_buy) and d_pct >= hurdle)
-                    if absorbed:
-                        lock_be = round(p.price_open + sl_dist * 0.50, info.digits) if is_buy else round(p.price_open - sl_dist * 0.50, info.digits)
-                        if (is_buy and lock_be > p.sl) or (not is_buy and lock_be < p.sl):
-                            mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "symbol": p.symbol, "position": p.ticket, "sl": lock_be, "tp": p.tp})
-                            self.state["absorb_locked"].append(t_key)
-                            log.info("[ABSORPTION LOCK +0.50R] %s #%s Delta=%+.1f%% -> SL=%s", p.symbol, p.ticket, d_pct, lock_be)
+        # Runner Trail (>= +2.20R -> Trail at 65% of peak excursion)
+        if t_key in st["t2_done"] and peak >= sl_dist * 2.20:
+            trail_sl = round(p.price_open + peak * 0.65, info.digits) if is_buy else round(p.price_open - peak * 0.65, info.digits)
+            if (is_buy and trail_sl > p.sl) or ((not is_buy) and trail_sl < p.sl):
+                mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "symbol": sym, "position": p.ticket, "sl": trail_sl, "tp": p.tp})
 
-            # 3. T1 (+0.85R): move SL to +0.12R
-            if t_key not in self.state["t1_done"] and gain >= sl_dist * 0.85:
-                new_sl = round(p.price_open + sl_dist * 0.12, info.digits) if is_buy else round(p.price_open - sl_dist * 0.12, info.digits)
-                if (is_buy and new_sl > p.sl) or (not is_buy and new_sl < p.sl):
-                    mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "symbol": p.symbol, "position": p.ticket, "sl": new_sl, "tp": p.tp})
-                    self.state["t1_done"].append(t_key)
-                    log.info("[T1 LOCK +0.85R] %s #%s SL -> %s", p.symbol, p.ticket, new_sl)
+    save_state(state_file, st)
 
-            # 4. T2 (+1.60R): close 50% volume & move SL to +1.05R
-            if t_key not in self.state["t2_done"] and gain >= sl_dist * 1.60:
-                h_vol = round(p.volume * 0.5, 2)
-                if h_vol >= info.volume_min:
-                    close_type = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
-                    mt5.order_send({
-                        "action": mt5.TRADE_ACTION_DEAL, "symbol": p.symbol, "volume": h_vol,
-                        "type": close_type, "position": p.ticket, "price": cur_price,
-                        "deviation": 30, "magic": MAGIC_NUMBER, "comment": "APEX_T2_HARVEST",
-                    })
-                new_sl = round(p.price_open + sl_dist * 1.05, info.digits) if is_buy else round(p.price_open - sl_dist * 1.05, info.digits)
-                mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "symbol": p.symbol, "position": p.ticket, "sl": new_sl, "tp": p.tp})
-                self.state["t2_done"].append(t_key)
-                log.info("[T2 HARVEST +1.60R] %s #%s harvested 50%% & SL -> %s", p.symbol, p.ticket, new_sl)
 
-            # 5. Runner trailing ratchet (>= +2.20R): lock 65% of peak gain
-            if t_key in self.state["t2_done"] and peak >= sl_dist * 2.20:
-                lock_sl = round(p.price_open + peak * 0.65, info.digits) if is_buy else round(p.price_open - peak * 0.65, info.digits)
-                if (is_buy and lock_sl > p.sl) or (not is_buy and lock_sl < p.sl):
-                    mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "symbol": p.symbol, "position": p.ticket, "sl": lock_sl, "tp": p.tp})
-                    log.info("[RUNNER TRAIL 65%%] %s #%s SL -> %s", p.symbol, p.ticket, lock_sl)
+def main():
+    args = parse_args()
+    log = setup_logger(args.tag)
+    state_file = BASE_DIR / f"state_{args.tag}_{args.magic}.json"
+    log.info("STARTING OMEGA APEX FINAL PRODUCTION | Terminal=%s | Portable=%s | Magic=%s", args.terminal, args.portable, args.magic)
 
-        self._save_state()
-
-    def cycle(self, dry_run: bool = False):
-        if not self.ensure_connected():
-            return
-        now_utc = datetime.now(timezone.utc)
-        acc = mt5.account_info()
-        if not acc:
-            return
-
-        if not self.sync_closed_deals_and_circuit_breaker(acc, now_utc):
-            return
-
-        positions = mt5.positions_get() or []
-        orders = mt5.orders_get() or []
-        if not dry_run:
-            self.manage_positions_and_orders(positions, orders, now_utc)
-
-        my_pos = [p for p in positions if p.magic == MAGIC_NUMBER]
-        my_ord = [o for o in orders if o.magic == MAGIC_NUMBER]
-
-        # Active Killzones: London (07:00-10:59 UTC) & NY Post-News (13:46-15:59 UTC)
-        in_london = (7 <= now_utc.hour <= 10)
-        in_ny = (now_utc.hour == 13 and now_utc.minute > 45) or (14 <= now_utc.hour <= 15)
-        in_kz = in_london or in_ny
-
-        if dry_run or (now_utc.minute % 15 == 0 and now_utc.minute != self.last_hb_min):
-            self.last_hb_min = now_utc.minute
-            log.info("[HB] %02d:%02d UTC (KZ:%s) | Eq=$%.2f | ApexPos=%d | ApexOrd=%d",
-                     now_utc.hour, now_utc.minute, "ON" if in_kz else "OFF", acc.equity, len(my_pos), len(my_ord))
-
-        # Count active USD-correlated exposure (max 1 concurrent USD major)
-        active_usd_count = sum(
-            1 for x in (my_pos + my_ord)
-            if any(x.symbol.startswith(u) for u in USD_CORRELATED)
-        )
-
-        for base in PORTFOLIO_6:
-            sym = self.resolve_symbol(base)
-            if not sym:
-                continue
-            sig = self.compute_setup(sym, base)
-            if dry_run and sig:
-                log.info("  [SCAN] %s | BoxReady=%s | H1=%s | M15Chop=%s | TickChop=%s | Vol=%.2fx | TickDelta=%+.1f%%",
-                         base, sig["box_ready"], "BULL" if sig["h1_bull"] else ("BEAR" if sig["h1_bear"] else "FLAT"),
-                         sig["m15_chop"], sig["tick_chop"], sig["vol_ratio"], sig["tick_delta"])
-            if dry_run or not in_kz or not sig or not sig["box_ready"]:
-                continue
-
-            if any(p.symbol == sym for p in my_pos) or any(o.symbol == sym for o in my_ord):
-                continue
-            if self.state["skip_date"].get(base) == sig["today_str"]:
-                continue
-            if base in USD_CORRELATED and active_usd_count >= 1:
-                continue
-            if sig["m15_chop"] or sig["tick_chop"] or sig["vol_ratio"] < 1.15:
-                continue
-
-            info = sig["info"]
-            tick = mt5.symbol_info_tick(sym)
-            if not tick:
-                continue
-
-            lot = self.calc_lot(base, info, acc.equity, sig["sl_dist"])
-            pdh_clear = (sig["pdh"] <= sig["buy_stop"]) or ((sig["pdh"] - sig["buy_stop"]) >= sig["sl_dist"] * 0.90)
-            pdl_clear = (sig["pdl"] >= sig["sell_stop"]) or ((sig["sell_stop"] - sig["pdl"]) >= sig["sl_dist"] * 0.90)
-
-            # Bullish Arming: H1 Bull + Non-Chop + Vol >= 1.15x + Tick Delta not fighting (>-12%)
-            if sig["h1_bull"] and tick.ask < sig["buy_stop"] and pdh_clear and sig["tick_delta"] > -12.0:
-                sl_buy = round(sig["buy_stop"] - sig["sl_dist"], info.digits)
-                res = mt5.order_send({
-                    "action": mt5.TRADE_ACTION_PENDING, "symbol": sym, "volume": lot,
-                    "type": mt5.ORDER_TYPE_BUY_STOP, "price": sig["buy_stop"], "sl": sl_buy,
-                    "deviation": 20, "magic": MAGIC_NUMBER, "comment": "OMEGA_APEX_BUY",
-                    "type_time": mt5.ORDER_TIME_DAY, "type_filling": mt5.ORDER_FILLING_IOC,
-                })
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    if base in USD_CORRELATED:
-                        active_usd_count += 1
-                    log.info("[APEX BUY ARMED] %s %.2fL BUY_STOP @ %s | SL=%s | Vol=%.2fx | TickDelta=%+.1f%% (#%s)",
-                             sym, lot, sig["buy_stop"], sl_buy, sig["vol_ratio"], sig["tick_delta"], res.order)
-
-            # Bearish Arming: H1 Bear + Non-Chop + Vol >= 1.15x + Tick Delta not fighting (<+12%)
-            elif sig["h1_bear"] and tick.bid > sig["sell_stop"] and pdl_clear and sig["tick_delta"] < 12.0:
-                sl_sell = round(sig["sell_stop"] + sig["sl_dist"], info.digits)
-                res = mt5.order_send({
-                    "action": mt5.TRADE_ACTION_PENDING, "symbol": sym, "volume": lot,
-                    "type": mt5.ORDER_TYPE_SELL_STOP, "price": sig["sell_stop"], "sl": sl_sell,
-                    "deviation": 20, "magic": MAGIC_NUMBER, "comment": "OMEGA_APEX_SELL",
-                    "type_time": mt5.ORDER_TIME_DAY, "type_filling": mt5.ORDER_FILLING_IOC,
-                })
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    if base in USD_CORRELATED:
-                        active_usd_count += 1
-                    log.info("[APEX SELL ARMED] %s %.2fL SELL_STOP @ %s | SL=%s | Vol=%.2fx | TickDelta=%+.1f%% (#%s)",
-                             sym, lot, sig["sell_stop"], sl_sell, sig["vol_ratio"], sig["tick_delta"], res.order)
-
-    def run(self):
-        log.info("====================================================================================")
-        log.info("OMEGA APEX ELITE PRODUCTION DAEMON ONLINE (MAGIC=44044 | FOOTPRINT + VPOC + DD GUARD)")
-        log.info("====================================================================================")
+    while True:
         try:
-            while True:
-                self.cycle(dry_run=False)
-                time.sleep(15)
-        except KeyboardInterrupt:
-            log.info("Shutdown requested.")
-        finally:
-            mt5.shutdown()
+            if not ensure_mt5(args.terminal, args.portable, log):
+                time.sleep(POLL_SECONDS)
+                continue
+
+            now_utc = datetime.now(timezone.utc)
+            today_date = now_utc.date()
+            today_str = today_date.isoformat()
+            ai = mt5.account_info()
+            ti = mt5.terminal_info()
+            if ai is None or ti is None:
+                time.sleep(POLL_SECONDS)
+                continue
+
+            st = load_state(state_file, today_str, float(ai.equity))
+
+            # Daily -2.0% Equity Circuit Breaker
+            dd_pct = (st["start_equity"] - float(ai.equity)) / max(st["start_equity"], 1.0)
+            if dd_pct >= MAX_DAILY_DD and not st["halted"]:
+                st["halted"] = True
+                save_state(state_file, st)
+                log.warning("[CIRCUIT BREAKER] Daily DD %.2f%% >= 2.0%%. Halting new entries today.", dd_pct * 100.0)
+                send_telegram(args.tag, f"CIRCUIT BREAKER HALT: Daily DD {dd_pct*100:.2f}%", log)
+
+            # Manage existing positions first
+            manage_open_positions(args.magic, args.tag, st, state_file, now_utc, log)
+
+            my_pos = [p for p in (mt5.positions_get() or []) if p.magic == args.magic]
+            my_ord = [o for o in (mt5.orders_get() or []) if o.magic == args.magic]
+
+            # Record any filled positions as traded today
+            for p in my_pos:
+                b = base_of_symbol(p.symbol)
+                if b not in st["traded_bases"]:
+                    st["traded_bases"].append(b)
+                    save_state(state_file, st)
+
+            # Cancel unarmed pending stop orders outside valid session windows (e.g., 13:15-13:45 HMR or >16:00 UTC)
+            for o in list(my_ord):
+                b = base_of_symbol(o.symbol)
+                if st["halted"] or not ti.trade_allowed or not in_session_window(b, now_utc.hour, now_utc.minute):
+                    mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": o.ticket})
+                    log.info("[ORDER CANCEL] Removed unarmed pending #%s (%s) outside active window.", o.ticket, o.symbol)
+
+            # Refresh pending orders list
+            my_ord = [o for o in (mt5.orders_get() or []) if o.magic == args.magic]
+            active_bases = {base_of_symbol(p.symbol) for p in my_pos} | {base_of_symbol(o.symbol) for o in my_ord} | set(st["traded_bases"])
+            usd_used = any(b in USD_CORR_BASES for b in active_bases)
+
+            # Pre-Arm Coiled BUY_STOP / SELL_STOP orders starting at 04:00 UTC
+            if not st["halted"] and ti.trade_allowed and now_utc.hour >= 4 and (len(my_pos) + len(my_ord)) < MAX_CONCURRENT_POS:
+                candidates = []
+                for base in SYMBOLS:
+                    if base in active_bases:
+                        continue
+                    if base in USD_CORR_BASES and usd_used:
+                        continue
+                    if not in_session_window(base, now_utc.hour, now_utc.minute):
+                        continue
+                    sym = resolve_symbol(base)
+                    if not sym:
+                        continue
+                    cand = evaluate_symbol(base, sym, today_date)
+                    if cand is not None:
+                        candidates.append(cand)
+
+                candidates.sort(key=lambda x: -x["edge_score"])
+                for cand in candidates:
+                    if (len(my_pos) + len(my_ord)) >= MAX_CONCURRENT_POS:
+                        break
+                    if cand["base"] in USD_CORR_BASES and usd_used:
+                        continue
+
+                    sym = cand["symbol"]
+                    info = mt5.symbol_info(sym)
+                    lot = compute_lot(sym, cand["sl_dist"], float(ai.equity))
+                    if info is None or lot <= 0:
+                        continue
+
+                    if cand["direction"] == "BUY":
+                        price = cand["buy_stop"]
+                        sl = round(price - cand["sl_dist"], info.digits)
+                        otype = mt5.ORDER_TYPE_BUY_STOP
+                    else:
+                        price = cand["sell_stop"]
+                        sl = round(price + cand["sl_dist"], info.digits)
+                        otype = mt5.ORDER_TYPE_SELL_STOP
+
+                    req = {
+                        "action": mt5.TRADE_ACTION_PENDING,
+                        "symbol": sym,
+                        "volume": lot,
+                        "type": otype,
+                        "price": price,
+                        "sl": sl,
+                        "deviation": 20,
+                        "magic": args.magic,
+                        "comment": f"{args.tag}_{cand['direction']}",
+                        "type_time": mt5.ORDER_TIME_DAY,
+                        "type_filling": mt5.ORDER_FILLING_RETURN,
+                    }
+                    res = mt5.order_send(req)
+                    if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
+                        my_ord.append(res)
+                        active_bases.add(cand["base"])
+                        if cand["base"] in USD_CORR_BASES:
+                            usd_used = True
+                        log.info(
+                            "[PRE-ARMED %s_STOP] %s (Score=%.1f) %.2fL @ %s | SL=%s | Vol=%.2fx (#%s)",
+                            cand["direction"], sym, cand["edge_score"], lot, price, sl, cand["vol_ratio"], res.order
+                        )
+                        send_telegram(args.tag, f"PRE-ARMED {cand['direction']}_STOP {sym} {lot:.2f}L @ {price} | SL={sl}", log)
+                    else:
+                        log.warning("[ORDER REJECTED] %s %s_STOP @ %s -> %s", sym, cand["direction"], price, res)
+
+        except Exception as exc:
+            log.exception("Loop exception: %s", exc)
+
+        time.sleep(POLL_SECONDS)
 
 
 if __name__ == "__main__":
-    eng = OmegaApexEliteEngine()
-    if "--dry-run" in sys.argv:
-        eng.cycle(dry_run=True)
-        mt5.shutdown()
-    else:
-        eng.run()
+    main()

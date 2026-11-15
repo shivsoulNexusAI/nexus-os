@@ -191,4 +191,4 @@ if __name__ == "__main__":
     print("\nTight SL (1 pip) Leverage-Cap Stress Result:")
     for k, v in res_tight.items():
         print(f"  • {k:<20}: {v}")
-    print("======================================")
+    print("======================================")

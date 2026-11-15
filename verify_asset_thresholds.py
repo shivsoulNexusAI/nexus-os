@@ -1,7 +1,7 @@
 import MetaTrader5 as mt5
 from nexus_multi_straddle_daemon import DualGatedDynamicEngine, SYMBOLS, ASSET_THRESHOLDS, DEFAULT_THRESHOLD
 
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
+TERMINAL = r"C:/MT5_Quant_278061453/terminal64.exe"
 engine = DualGatedDynamicEngine()
 engine.load_model()
 

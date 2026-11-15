@@ -1,0 +1,82 @@
+import MetaTrader5 as mt5
+import numpy as np
+from datetime import datetime
+
+TERMINAL = r"C:/MT5_HFT_278041671/terminal64.exe"
+ACCOUNT_TARGET = 278062042
+
+print("=" * 85)
+print("DEEP DELTA AUDIT: GOLD HFT BOT (#278062042)")
+print("=" * 85)
+
+if not mt5.initialize(path=TERMINAL, portable=False, timeout=10000):
+    print(f"[-] MT5 initialization failed: {mt5.last_error()}")
+    exit(1)
+
+acc = mt5.account_info()
+print(f"Account: #{acc.login} ({acc.server}) | Balance: ${acc.balance:,.2f} | Equity: ${acc.equity:,.2f} | Margin Free: ${acc.margin_free:,.2f}")
+
+# 1. Inspect Active Positions & Orders
+positions = mt5.positions_get() or []
+orders = mt5.orders_get() or []
+print(f"\n[1] ACTIVE ARTIFACTS:")
+print(f"    Open Positions : {len(positions)}")
+for p in positions:
+    print(f"      -> POS #{p.ticket} | {p.symbol} {'BUY' if p.type == 0 else 'SELL'} {p.volume:.2f}L @ {p.price_open:.3f} | Current: {p.price_current:.3f} | PnL: ${p.profit:+.2f}")
+
+print(f"    Pending Orders : {len(orders)}")
+for o in orders:
+    o_type = "BUY_STOP" if o.type == 4 else ("SELL_STOP" if o.type == 5 else str(o.type))
+    print(f"      -> ORD #{o.ticket} | {o.symbol} {o_type} {o.volume_current:.2f}L @ {o.price_open:.3f} | SL: {o.sl:.3f} | TP: {o.tp:.3f} | Age: {datetime.now() - datetime.fromtimestamp(o.time_setup)}")
+
+# 2. Inspect Live Market Indicators (ATR, CHOP, Spread)
+sym = "XAUUSD"
+tick = mt5.symbol_info_tick(sym)
+rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M5, 0, 30)
+
+if tick and rates is not None and len(rates) >= 15:
+    spread = tick.ask - tick.bid
+    highs = rates["high"][-14:]
+    lows = rates["low"][-14:]
+    closes = rates["close"][-15:]
+    
+    # Calculate True Range (TR) & ATR14
+    tr_list = []
+    for i in range(1, 15):
+        h = highs[i-1]
+        l = lows[i-1]
+        prev_c = closes[i-1]
+        tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+        tr_list.append(tr)
+    atr14 = np.mean(tr_list)
+    
+    # Calculate Choppiness Index (CHOP)
+    hh = np.max(highs)
+    ll = np.min(lows)
+    range_hl = hh - ll
+    sum_tr = np.sum(tr_list)
+    chop = 100 * (np.log10(sum_tr / (range_hl if range_hl > 0 else 0.001)) / np.log10(14))
+    
+    print(f"\n[2] REAL-TIME QUANT FILTERS (M5 on {sym}):")
+    print(f"    Spot Price      : Bid: {tick.bid:.3f} | Ask: {tick.ask:.3f}")
+    print(f"    Current Spread  : ${spread:.3f} (Max safe threshold: ~$0.50)")
+    print(f"    Calculated ATR14: ${atr14:.2f} (Required Min: Normal $1.80, Asian $2.40)")
+    print(f"    Calculated CHOP : {chop:.1f} (Threshold: < 55.0 required for trending)")
+    
+    # Evaluation Verdict
+    print(f"\n[3] GATE EVALUATION:")
+    if chop >= 55.0:
+        print(f"    [!] CHOP LOCKOUT: CHOP ({chop:.1f}) >= 55.0 -> Daemon deliberately suppresses straddles during chop.")
+    else:
+        print(f"    [+] CHOP OK: CHOP ({chop:.1f}) < 55.0")
+        
+    if atr14 < 1.80:
+        print(f"    [!] ATR LOCKOUT: ATR (${atr14:.2f}) < $1.80 -> Market volatility too low for clean breakouts.")
+    else:
+        print(f"    [+] ATR OK: ATR (${atr14:.2f}) >= $1.80")
+        
+    if len(orders) > 0 and len(orders) < 2:
+        print(f"    [!] ASYMMETRIC BRACKET LOCKOUT: 1 orphan pending order exists. Daemon may be waiting for complete order purge.")
+
+mt5.shutdown()
+print("=" * 85)

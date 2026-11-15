@@ -1,0 +1,65 @@
+from pathlib import Path
+import re
+from datetime import datetime, timedelta
+import MetaTrader5 as mt5
+
+APEX_TERMINAL = r"C:/Program Files/MetaTrader 5 - Apex Satellite/terminal64.exe"
+DAEMON_SCRIPT = Path(r"C:\Quant-Nexus-Eng\silver_bullet_daemon.py")
+
+print("=" * 85)
+print("DEEP DELTA AUDIT: ACCOUNT #278017866 & SILVER BULLET ENGINE")
+print("=" * 85)
+
+# 1. Inspect daemon source code for terminal path and target account
+if DAEMON_SCRIPT.exists():
+    code = DAEMON_SCRIPT.read_text(encoding="utf-8", errors="ignore")
+    paths = re.findall(r'path\s*=\s*r?["\'](.*?)["\']', code)
+    symbols = re.findall(r'SYMBOLS\s*=\s*\[(.*?)\]', code, re.DOTALL)
+    print(f"[+] silver_bullet_daemon.py exists:")
+    print(f"    Terminal Path(s) in code : {paths if paths else 'DEFAULT MT5 PATH (No explicit path!)'}")
+    if symbols:
+        print(f"    Monitored Symbols       : {symbols[0].strip()}")
+else:
+    print("[-] silver_bullet_daemon.py NOT found in C:\\Quant-Nexus-Eng")
+
+# 2. Inspect Silver Bullet Logs
+sb_logs = list(Path(r"C:\Quant-Nexus-Eng").glob("*silver*.*")) + list(Path(r"C:\Quant-Nexus-Prod").glob("*silver*.*"))
+print("-" * 85)
+print(f"DIAGNOSTIC LOG FILES FOUND ({len(sb_logs)}):")
+for log_file in sb_logs:
+    if log_file.suffix in [".log", ".txt"]:
+        print(f"\n--- Tail of {log_file.name} ---")
+        lines = log_file.read_text(encoding="utf-8", errors="ignore").splitlines()[-10:]
+        for l in lines:
+            print(f"  {l}")
+
+# 3. Connect to Terminal and Inspect Account State & Trade History
+print("-" * 85)
+if mt5.initialize(path=APEX_TERMINAL, portable=False, timeout=10000):
+    acc = mt5.account_info()
+    print(f"[+] Connected to Apex Terminal: Account #{acc.login} ({acc.server})")
+    print(f"    Balance: ${acc.balance:,.2f} | Equity: ${acc.equity:,.2f} | Free Margin: ${acc.margin_free:,.2f}")
+    
+    # Check last deals
+    deals = mt5.history_deals_get(datetime.now() - timedelta(days=30), datetime.now()) or []
+    print(f"    Total Deals in last 30 days: {len(deals)}")
+    if deals:
+        last_deal = deals[-1]
+        t = datetime.fromtimestamp(last_deal.time).strftime("%Y-%m-%d %H:%M:%S")
+        print(f"    Last Executed Deal: Ticket #{last_deal.ticket} on {last_deal.symbol} at {t} | Profit: ${last_deal.profit:,.2f}")
+    else:
+        print("    [!] ZERO deals found in the past 30 days.")
+        
+    # Check Symbol market data viability
+    for sym in ["EURUSD", "GBPUSD", "USDJPY", "US30", "XAUUSD"]:
+        tick = mt5.symbol_info_tick(sym)
+        info = mt5.symbol_info(sym)
+        if tick and info:
+            print(f"    Market Tick {sym:<7}: Bid={tick.bid:<9} Ask={tick.ask:<9} TradeMode={info.trade_mode}")
+        else:
+            print(f"    Market Tick {sym:<7}: NO TICK / SYMBOL NOT SELECTED")
+            
+    mt5.shutdown()
+else:
+    print(f"[-] Failed to initialize Apex Terminal: {mt5.last_error()}")
+print("=" * 85)

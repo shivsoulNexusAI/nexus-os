@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QuantNexus Mission Delta: Local SQLite Telemetry Engine
 Captures trade execution records, slippage, and cadence metrics into nexus_telemetry.db.
@@ -32,9 +32,9 @@ logging.basicConfig(
 log = logging.getLogger("TelemetryDB")
 
 FLEET = [
-    {"login": 278017866, "path": r"C:\MT5_Quant_278017866\terminal64.exe", "tag": "T1"},
-    {"login": 278041169, "path": r"C:\MT5_Pending_278041169\terminal64.exe", "tag": "T2"},
-    {"login": 278041671, "path": r"C:\MT5_HFT_278041671\terminal64.exe", "tag": "T3"}
+    {"login": 278062038, "path": r"C:\MT5_Quant_278061453\terminal64.exe", "tag": "T1"},
+    {"login": 278062039, "path": r"C:\MT5_Pending_278041169\terminal64.exe", "tag": "T2"},
+    {"login": 278062042, "path": r"C:\MT5_HFT_278041671\terminal64.exe", "tag": "T3"}
 ]
 
 def init_database():

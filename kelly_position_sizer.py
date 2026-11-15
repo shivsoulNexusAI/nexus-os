@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus Dynamic Fractional Kelly Position Sizer
 Computes optimal trade volume based on trailing deal history edge & payoff ratio.
 """
@@ -131,7 +131,7 @@ class KellyPositionSizer:
         return min(max(final_lots, vol_min), vol_max)
 
 if __name__ == "__main__":
-    sizer_t1 = KellyPositionSizer(278017866, r"C:\MT5_Quant_278017866\terminal64.exe")
+    sizer_t1 = KellyPositionSizer(278062038, r"C:\MT5_Quant_278061453\terminal64.exe")
     stats = sizer_t1.compute_edge_metrics()
     print("=" * 60)
     print("[*] T1 KELLY EDGE AUDIT:")
@@ -141,3 +141,4 @@ if __name__ == "__main__":
     lots = sizer_t1.calculate_lot_size("USDJPY", sl_points=350)
     print(f"    • Recommended USDJPY Lot Size (35.0 pip SL): {lots} lots")
     print("=" * 60)
+

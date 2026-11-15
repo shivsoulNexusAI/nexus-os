@@ -1,0 +1,26 @@
+# NEXUS UPDATED VISION SPECIFICATION (2025 - 2026 AUDIT)
+Backup Timestamp: 2026-11-11T05:58:30.629567
+Trading Account: #278041169 (Exness-MT5Trial5)
+
+1. Profit Protection Architecture:
+   - Tier 1: Fast BE-Lock at +0.75R
+   - Tier 2: 50% Rapid Harvest at +1.40R
+   - Tier 3: M5 Candle Trailing Stop after +1.20R
+   - Broker-Side Order TTL: 60-Minute Specified Expiration
+
+2. Multi-Asset Execution Matrix:
+   - Base Lots: 0.02L (0.05L for US30)
+   - Per-Symbol OCO: Enabled (cancels opposite pending leg only upon fill)
+   - Concurrent Asset Cap: 4 maximum active asset positions
+   - Asset ML Decision Hurdles:
+     * EURUSD: 0.65
+     * GBPUSD: 0.65
+     * USDJPY: 0.65
+     * US30:   0.68
+     * XAUUSD: 0.72
+     * BTCUSD: 0.72
+
+3. Annual Backtest Metrics (2025-11 to 2026-11 across 386k+ M5 Bars):
+   - Win Rate: ~57.8% (up from 7.3% legacy)
+   - EURUSD Net R: +132.08 R
+   - Market Exposure / Hold Duration: Cut by 44.2%

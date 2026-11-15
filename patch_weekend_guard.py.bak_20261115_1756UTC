@@ -1,0 +1,58 @@
+from pathlib import Path
+
+p = Path(r"C:\Quant-Nexus-Eng\omega_apex_scanner.py")
+code = p.read_text(encoding="utf-8")
+
+# 1. Skip order_send on weekend-closed symbols (trade_mode != FULL or no fresh tick within 120s)
+old_exec = '''def execute_auto_trigger(symbol: str, direction: str, confidence: int):
+    """Executes autonomous trade on T1 (#278061453) when confidence >= 75%."""'''
+
+new_exec = '''def execute_auto_trigger(symbol: str, direction: str, confidence: int):
+    """Executes autonomous trade on T1 (#278061453) when confidence >= 75%."""
+    info_chk = mt5.symbol_info(symbol)
+    tick_chk = mt5.symbol_info_tick(symbol)
+    if not info_chk or not tick_chk or info_chk.trade_mode != mt5.SYMBOL_TRADE_MODE_FULL:
+        return f"⏸️ MARKET CLOSED {symbol} ({confidence}%)"
+    # Check if tick timestamp is stale (> 180s old = weekend session closed)
+    if abs(time.time() - tick_chk.time) > 180 and "BTC" not in symbol:
+        return f"⏸️ WEEKEND CLOSED {symbol} ({confidence}%)"'''
+
+if old_exec in code:
+    code = code.replace(old_exec, new_exec, 1)
+
+# 2. Collect all triggers cleanly instead of overwriting alpha_status
+old_loop = '''    scanner_lines = []
+    alpha_status = "Matrix Balanced | Awaiting Edge"
+
+    for idx, sym in enumerate(SYMBOLS, 1):
+        mt5.symbol_select(sym, True)
+        direction, tf, conf, delta, dii = compute_microstructure_score(sym)
+
+        icon = "🟢" if direction == "BUY" else ("🔴" if direction == "SELL" else "⚪")
+        state_tag = "[EXEC]" if conf >= CONFIDENCE_THRESHOLD else "[HUNT]"
+
+        if conf >= CONFIDENCE_THRESHOLD and direction in ("BUY", "SELL"):
+            alpha_status = execute_auto_trigger(sym, direction, conf)'''
+
+new_loop = '''    scanner_lines = []
+    triggers = []
+
+    for idx, sym in enumerate(SYMBOLS, 1):
+        mt5.symbol_select(sym, True)
+        direction, tf, conf, delta, dii = compute_microstructure_score(sym)
+
+        icon = "🟢" if direction == "BUY" else ("🔴" if direction == "SELL" else "⚪")
+        state_tag = "[EXEC]" if conf >= CONFIDENCE_THRESHOLD else "[HUNT]"
+
+        if conf >= CONFIDENCE_THRESHOLD and direction in ("BUY", "SELL"):
+            triggers.append(execute_auto_trigger(sym, direction, conf))'''
+
+if old_loop in code:
+    code = code.replace(old_loop, new_loop, 1)
+    code = code.replace(
+        'print(f"[{now_utc}] Cycle complete | Alpha: {alpha_status}")',
+        'alpha_status = " | ".join(triggers) if triggers else "Matrix Balanced | Awaiting Edge"\n    print(f"[{now_utc}] Cycle complete | Alpha: {alpha_status}")'
+    )
+
+p.write_text(code, encoding="utf-8")
+print("[SUCCESS] Patched omega_apex_scanner.py: BTCUSD live-armed 24/7, weekend closed symbols gated cleanly.")

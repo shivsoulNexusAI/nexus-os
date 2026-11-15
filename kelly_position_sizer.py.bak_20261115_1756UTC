@@ -1,0 +1,144 @@
+"""
+QuantNexus Dynamic Fractional Kelly Position Sizer
+Computes optimal trade volume based on trailing deal history edge & payoff ratio.
+"""
+import MetaTrader5 as mt5
+from datetime import datetime, timedelta, timezone
+from typing import Dict, Any, Optional
+
+class KellyPositionSizer:
+    def __init__(
+        self,
+        account_id: int,
+        terminal_path: str,
+        lookback_days: int = 30,
+        fractional_multiplier: float = 0.5, # Half-Kelly
+        max_risk_pct: float = 0.02,         # 2.0% hard account risk ceiling
+        min_risk_pct: float = 0.005         # 0.5% floor
+    ):
+        self.account_id = account_id
+        self.terminal_path = terminal_path
+        self.lookback_days = lookback_days
+        self.fractional_multiplier = fractional_multiplier
+        self.max_risk_pct = max_risk_pct
+        self.min_risk_pct = min_risk_pct
+
+    def compute_edge_metrics(self) -> Dict[str, Any]:
+        """Audits closed deals from MT5 history to compute win rate and payoff."""
+        if not mt5.initialize(path=self.terminal_path):
+            return {"error": "Failed to connect to MT5 Terminal"}
+        
+        acc = mt5.account_info()
+        if not acc or acc.login != self.account_id:
+            mt5.shutdown()
+            return {"error": f"Account mismatch. Expected #{self.account_id}"}
+
+        from_date = datetime.now(timezone.utc) - timedelta(days=self.lookback_days)
+        deals = mt5.history_deals_get(from_date, datetime.now(timezone.utc))
+        mt5.shutdown()
+
+        if not deals:
+            return {
+                "trades_analyzed": 0,
+                "win_rate": 0.50,
+                "payoff_ratio": 1.50,
+                "kelly_fraction": 0.01,
+                "recommended_risk_pct": self.min_risk_pct
+            }
+
+        # Filter out balance operations, credit, commissions-only
+        profits = [d.profit for d in deals if d.entry == mt5.DEAL_ENTRY_OUT and d.profit != 0]
+
+        if len(profits) < 10:
+            # Cold-start fallback if fewer than 10 closed trades exist
+            return {
+                "trades_analyzed": len(profits),
+                "win_rate": 0.50,
+                "payoff_ratio": 1.50,
+                "kelly_fraction": 0.01,
+                "recommended_risk_pct": self.min_risk_pct
+            }
+
+        wins = [p for p in profits if p > 0]
+        losses = [abs(p) for p in profits if p < 0]
+
+        p = len(wins) / len(profits)
+        q = 1.0 - p
+        avg_win = (sum(wins) / len(wins)) if wins else 1.0
+        avg_loss = (sum(losses) / len(losses)) if losses else 1.0
+        b = avg_win / avg_loss if avg_loss > 0 else 1.0
+
+        # Full Kelly = (p * b - q) / b
+        raw_kelly = (p * b - q) / b if b > 0 else 0.0
+        # Half Kelly
+        half_kelly = max(0.0, raw_kelly * self.fractional_multiplier)
+
+        # Bound risk between min_risk_pct and max_risk_pct
+        calibrated_risk = min(max(half_kelly, self.min_risk_pct), self.max_risk_pct)
+
+        return {
+            "trades_analyzed": len(profits),
+            "win_rate": round(p, 4),
+            "payoff_ratio": round(b, 4),
+            "raw_kelly": round(raw_kelly, 4),
+            "half_kelly": round(half_kelly, 4),
+            "recommended_risk_pct": round(calibrated_risk, 4),
+            "equity": acc.equity
+        }
+
+    def calculate_lot_size(
+        self,
+        symbol: str,
+        sl_points: float,
+        fixed_risk_pct: Optional[float] = None
+    ) -> float:
+        """Translates calibrated risk into exact MT5 order volume lots."""
+        metrics = self.compute_edge_metrics()
+        if "error" in metrics:
+            return 0.01
+
+        risk_pct = fixed_risk_pct if fixed_risk_pct else metrics["recommended_risk_pct"]
+        equity = metrics.get("equity", 1000.0)
+        risk_cash = equity * risk_pct
+
+        if not mt5.initialize(path=self.terminal_path):
+            return 0.01
+
+        sym_info = mt5.symbol_info(symbol)
+        if not sym_info:
+            mt5.shutdown()
+            return 0.01
+
+        point = sym_info.point
+        tick_value = sym_info.trade_tick_value
+        tick_size = sym_info.trade_tick_size
+        vol_min = sym_info.volume_min
+        vol_max = sym_info.volume_max
+        vol_step = sym_info.volume_step
+        mt5.shutdown()
+
+        # Risk Cash = Lots * (SL Points / (tick_size / point)) * tick_value
+        points_per_tick = (tick_size / point) if point > 0 else 1.0
+        loss_per_lot = (sl_points / points_per_tick) * tick_value
+
+        if loss_per_lot <= 0:
+            return vol_min
+
+        raw_lots = risk_cash / loss_per_lot
+        steps = round(raw_lots / vol_step)
+        final_lots = round(steps * vol_step, 2)
+
+        return min(max(final_lots, vol_min), vol_max)
+
+if __name__ == "__main__":
+    sizer_t1 = KellyPositionSizer(278061453, r"C:\MT5_Quant_278061453\terminal64.exe")
+    stats = sizer_t1.compute_edge_metrics()
+    print("=" * 60)
+    print("[*] T1 KELLY EDGE AUDIT:")
+    for k, v in stats.items():
+        print(f"    • {k}: {v}")
+    
+    lots = sizer_t1.calculate_lot_size("USDJPY", sl_points=350)
+    print(f"    • Recommended USDJPY Lot Size (35.0 pip SL): {lots} lots")
+    print("=" * 60)
+

@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus Fleet-Wide Circuit Breaker Guardian
 Monitors aggregate and per-terminal floating drawdown across T1, T2, and T3.
 """
@@ -27,9 +27,9 @@ logging.basicConfig(
 log = logging.getLogger("CircuitBreaker")
 
 FLEET = [
-    {"name": "T1 Silver Bullet", "path": r"C:\MT5_Quant_278017866\terminal64.exe", "login": 278017866, "max_dd_pct": 0.04},
-    {"name": "T2 4 Majors Grid", "path": r"C:\MT5_Pending_278041169\terminal64.exe", "login": 278041169, "max_dd_pct": 0.05},
-    {"name": "T3 Gold HFT", "path": r"C:\MT5_HFT_278041671\terminal64.exe", "login": 278041671, "max_dd_pct": 0.04}
+    {"name": "T1 Silver Bullet", "path": r"C:\MT5_Quant_278061453\terminal64.exe", "login": 278062038, "max_dd_pct": 0.04},
+    {"name": "T2 4 Majors Grid", "path": r"C:\MT5_Pending_278041169\terminal64.exe", "login": 278062039, "max_dd_pct": 0.05},
+    {"name": "T3 Gold HFT", "path": r"C:\MT5_HFT_278041671\terminal64.exe", "login": 278062042, "max_dd_pct": 0.04}
 ]
 FLEET_MAX_AGGREGATE_DD_PCT = 0.06 # 6% maximum aggregate drawdown
 POLL_INTERVAL_SEC = 5

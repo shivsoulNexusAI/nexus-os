@@ -32,7 +32,7 @@ def init_ledger():
 def record_execution(ticket, symbol, direction, killzone, volume,
                      target_price, fill_price, point_size, spread_pts,
                      signal_time, dispatch_latency_ms, broker_ack_latency_ms,
-                     magic=278017866, retcode=10009, broker_comment=""):
+                     magic=278062038, retcode=10009, broker_comment=""):
     init_ledger()
     slippage_pts = (fill_price - target_price) / point_size if point_size > 0 else 0.0
     if direction == "SELL":

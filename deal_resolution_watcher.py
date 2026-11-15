@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS REAL-TIME TELEGRAM DEAL WATCHER (HEADLESS DAEMON)
 Polls MT5 closed deals every 10 seconds and dispatches instant alerts.
@@ -9,7 +9,7 @@ from datetime import datetime, timezone, timedelta
 from telegram_config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
 import MetaTrader5 as mt5
 
-TERMINAL = r"C:/MT5_Quant_278017866/terminal64.exe"
+TERMINAL = r"C:/MT5_Pending_278041169/terminal64.exe"
 TG_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 
 if not mt5.initialize(path=TERMINAL, portable=False):
@@ -29,7 +29,7 @@ while True:
     for d in deals:
         if d.ticket not in seen_deals and d.entry == 1:
             seen_deals.add(d.ticket)
-            icon = "🎯 [TAKE PROFIT]" if d.profit > 0 else "🛡️ [STOP LOSS]"
+            icon = "рџЋЇ [TAKE PROFIT]" if d.profit > 0 else "рџ›ЎпёЏ [STOP LOSS]"
             side = "BUY (Close Sell)" if d.type == 0 else "SELL (Close Buy)"
             msg = (
                 f"{icon} <b>{d.symbol}</b> Deal #{d.ticket}\n"
@@ -42,3 +42,4 @@ while True:
                 httpx.post(TG_URL, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg, "parse_mode": "HTML"}, timeout=10.0)
             except Exception:
                 pass
+

@@ -1,0 +1,27 @@
+{
+  "chat_id": 5279761713,
+  "updated_at_utc": "2026-11-15 18:11:10 UTC",
+  "bots": {
+    "T1": {
+      "bot_name": "Quant Alert Bot (Terminal 1)",
+      "token": "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw",
+      "account": 278062038,
+      "symbols": "BTCUSD (95% Quarantine Gate)",
+      "role": "VPIN Toxicity & SMT Telemetry"
+    },
+    "T2": {
+      "bot_name": "Nexus AI Bot (Terminal 2)",
+      "token": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",
+      "account": 278062039,
+      "symbols": "EURUSD, GBPUSD, USDJPY, GBPJPY",
+      "role": "FX Majors Half-Kelly + OB/IFVG Engine"
+    },
+    "T3": {
+      "bot_name": "Nexus Gold 24/7 (Terminal 3)",
+      "token": "9288476562:AAEtFGf4kAfUS-tYmb6Lw-dulLEozwx_A5I",
+      "account": 278062042,
+      "symbols": "XAUUSD",
+      "role": "Gold Killzone Sniper + Trailing Breakeven"
+    }
+  }
+}

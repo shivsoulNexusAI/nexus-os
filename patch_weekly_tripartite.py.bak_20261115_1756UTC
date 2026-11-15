@@ -1,0 +1,64 @@
+from pathlib import Path
+
+p = Path(r"C:\Quant-Nexus-Eng\nexus_weekly_attribution.py")
+code = p.read_text(encoding="utf-8")
+
+old_mt5_block = '''    # 2. Pull realized closed deals from MT5 Terminal 1 (#278061453)
+    realized_deals = []
+    acc_balance, acc_equity = 0.0, 0.0
+    if mt5.initialize(path=VERIFIED_T1_PATH):
+        acc = mt5.account_info()
+        if acc:
+            acc_balance, acc_equity = acc.balance, acc.equity
+        deals = mt5.history_deals_get(start_utc, now_utc) or []
+        for d in deals:
+            if d.magic == MAGIC_NUMBER and d.entry in (mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_OUT_BY):
+                net_pnl = float(d.profit + d.commission + d.swap)
+                realized_deals.append({
+                    "ticket": d.ticket,
+                    "position_id": d.position_id,
+                    "symbol": d.symbol,
+                    "volume": d.volume,
+                    "price": d.price,
+                    "net_pnl": net_pnl,
+                    "time_utc": datetime.fromtimestamp(d.time, tz=timezone.utc),
+                    "comment": d.comment,
+                })
+        mt5.shutdown()'''
+
+new_mt5_block = '''    # 2. Pull realized closed deals across all 3 Tripartite Sleeves (T1, T2, T3)
+    realized_deals = []
+    acc_balance, acc_equity = 0.0, 0.0
+    silos = [
+        ("T1", r"C:\\Program Files\\MetaTrader 5 - Apex Satellite\\terminal64.exe", 278061453, r"H@ngkook3695", "Exness-MT5Trial5"),
+        ("T2", r"C:\\MT5_Pending_278041169\\terminal64.exe", 278041169, r"H@ngkook3695", "Exness-MT5Trial5"),
+        ("T3", r"C:\\MT5_HFT_278041671\\terminal64.exe", 278041671, r"H@ngkook3695", "Exness-MT5Trial5"),
+    ]
+    for s_id, s_path, s_login, s_pwd, s_srv in silos:
+        if mt5.initialize(path=s_path, login=s_login, password=s_pwd, server=s_srv):
+            acc = mt5.account_info()
+            if acc:
+                acc_balance += acc.balance
+                acc_equity += acc.equity
+            deals = mt5.history_deals_get(start_utc, now_utc) or []
+            for d in deals:
+                if d.entry in (mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_OUT_BY):
+                    net_pnl = float(d.profit + d.commission + d.swap)
+                    realized_deals.append({
+                        "sleeve": s_id,
+                        "ticket": d.ticket,
+                        "position_id": d.position_id,
+                        "symbol": d.symbol,
+                        "volume": d.volume,
+                        "price": d.price,
+                        "net_pnl": net_pnl,
+                        "time_utc": datetime.fromtimestamp(d.time, tz=timezone.utc),
+                        "comment": d.comment,
+                    })
+            mt5.shutdown()'''
+
+if old_mt5_block in code:
+    code = code.replace(old_mt5_block, new_mt5_block, 1)
+    code = code.replace("Account: #278061453", "Fleet  : T1+T2+T3 Tripartite")
+    p.write_text(code, encoding="utf-8")
+    print("[OK] Updated nexus_weekly_attribution.py for T1+T2+T3 Tripartite Reconciliation.")

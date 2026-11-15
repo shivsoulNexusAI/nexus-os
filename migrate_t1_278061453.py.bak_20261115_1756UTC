@@ -1,0 +1,74 @@
+import json
+from pathlib import Path
+import MetaTrader5 as mt5
+
+BASE_DIR = Path(r"C:\Quant-Nexus-Eng")
+NEW_LOGIN = 278061453
+NEW_SERVER = "Exness-MT5Trial5"
+NEW_PASSWORD = r"H@ngkook3695"
+
+# 1. Update t1_telegram_config.json
+t1_cfg_path = BASE_DIR / "t1_telegram_config.json"
+if t1_cfg_path.exists():
+    t1_data = json.loads(t1_cfg_path.read_text(encoding="utf-8-sig"))
+    t1_data["account_login"] = NEW_LOGIN
+    t1_data["server"] = NEW_SERVER
+    t1_cfg_path.write_text(json.dumps(t1_data, indent=4), encoding="utf-8")
+    print(f"[OK] Updated t1_telegram_config.json -> Login: {NEW_LOGIN}")
+
+# 2. Update accounts.json (set T1 / main alias to 278061453)
+acc_cfg_path = BASE_DIR / "accounts.json"
+if acc_cfg_path.exists():
+    acc_data = json.loads(acc_cfg_path.read_text(encoding="utf-8-sig"))
+    if "accounts" not in acc_data:
+        acc_data["accounts"] = {}
+    acc_data["accounts"]["t1_institutional"] = {
+        "name": "Exness T1 Institutional + BTC",
+        "login": NEW_LOGIN,
+        "password": NEW_PASSWORD,
+        "server": NEW_SERVER
+    }
+    acc_data["active_alias"] = "t1_institutional"
+    acc_cfg_path.write_text(json.dumps(acc_data, indent=4), encoding="utf-8")
+    print(f"[OK] Updated accounts.json -> Active Alias: t1_institutional ({NEW_LOGIN})")
+
+# 3. Update MAGIC_NUMBER and explicit login binding in omega_apex_scanner.py
+scanner_path = BASE_DIR / "omega_apex_scanner.py"
+if scanner_path.exists():
+    code = scanner_path.read_text(encoding="utf-8")
+    code = code.replace("MAGIC_NUMBER = 278061453", f"MAGIC_NUMBER = {NEW_LOGIN}")
+    
+    # Ensure mt5.login() switches Terminal 1 cleanly to 278061453
+    old_init = """    if not mt5.initialize():
+        print(f"[IPC ERROR] MT5 initialization failed: {mt5.last_error()}")
+        return"""
+    new_init = f"""    if not mt5.initialize():
+        print(f"[IPC ERROR] MT5 initialization failed: {{mt5.last_error()}}")
+        return
+    if not mt5.login({NEW_LOGIN}, password=r"{NEW_PASSWORD}", server="{NEW_SERVER}"):
+        print(f"[LOGIN ERROR] Failed to switch to {NEW_LOGIN}: {{mt5.last_error()}}")
+        return"""
+        
+    if old_init in code:
+        code = code.replace(old_init, new_init, 1)
+    scanner_path.write_text(code, encoding="utf-8")
+    print(f"[OK] Updated omega_apex_scanner.py -> Bound to {NEW_LOGIN} ({NEW_SERVER})")
+
+# 4. Live IPC Handshake & BTCUSD Tick Verification
+print("\n[*] Testing live MT5 IPC connection to 278061453...")
+if mt5.initialize():
+    if mt5.login(NEW_LOGIN, password=NEW_PASSWORD, server=NEW_SERVER):
+        info = mt5.account_info()
+        term = mt5.terminal_info()
+        mt5.symbol_select("BTCUSD", True)
+        btc_tick = mt5.symbol_info_tick("BTCUSD")
+        print(f"  [SUCCESS] Connected Account: #{info.login} | Server: {info.server}")
+        print(f"  [SUCCESS] Balance: ${info.balance:,.2f} | Equity: ${info.equity:,.2f} | Leverage: 1:{info.leverage}")
+        print(f"  [SUCCESS] Algo Trading Enabled: {term.trade_allowed if term else 'Unknown'}")
+        if btc_tick:
+            print(f"  [SUCCESS] Live BTCUSD Feed: Bid={btc_tick.bid} | Ask={btc_tick.ask}")
+    else:
+        print(f"  [FAILED] mt5.login() error: {mt5.last_error()}")
+    mt5.shutdown()
+else:
+    print(f"  [FAILED] mt5.initialize() error: {mt5.last_error()}")

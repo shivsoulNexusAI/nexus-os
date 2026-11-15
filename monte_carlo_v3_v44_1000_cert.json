@@ -1,0 +1,62 @@
+{
+  "certified_at": "2026-11-13T17:14:41.737341+00:00",
+  "system_version": "V3.0_ML + V4.4_ICT_DELTA_FUSION",
+  "verdict": "NEEDS_CALIBRATION",
+  "historical_trades": 373,
+  "mean_trade_pnl_usd": 16.39,
+  "std_trade_pnl_usd": 27.41,
+  "t_stat_edge": 11.55,
+  "standard_bootstrap_1000": {
+    "n_simulations": 1000,
+    "trades_per_path": 373,
+    "prob_profitable_pct": 100.0,
+    "prob_dd_under_3pct": 40.2,
+    "prob_ruin_pct": 0.0,
+    "final_equity_percentiles": {
+      "p05_worst_case": 6231.85,
+      "p25_conservative": 6724.33,
+      "p50_median": 7061.94,
+      "p75_favorable": 7426.73,
+      "p95_best_case": 7965.82
+    },
+    "max_drawdown_pct_percentiles": {
+      "p50_median": 3.26,
+      "p90_tail": 5.08,
+      "p95_extreme_tail": 5.97,
+      "p99_worst_1pct": 7.8
+    },
+    "profit_factor_percentiles": {
+      "p05_tail": 4.19,
+      "p50_median": 5.11,
+      "p95_upper": 6.51
+    },
+    "max_consec_losses_p95": 7
+  },
+  "adversarial_stress_1000": {
+    "n_simulations": 1000,
+    "trades_per_path": 373,
+    "prob_profitable_pct": 100.0,
+    "prob_dd_under_3pct": 7.0,
+    "prob_ruin_pct": 0.0,
+    "final_equity_percentiles": {
+      "p05_worst_case": 4130.18,
+      "p25_conservative": 4518.29,
+      "p50_median": 4810.44,
+      "p75_favorable": 5085.91,
+      "p95_best_case": 5521.27
+    },
+    "max_drawdown_pct_percentiles": {
+      "p50_median": 4.38,
+      "p90_tail": 6.38,
+      "p95_extreme_tail": 7.13,
+      "p99_worst_1pct": 9.51
+    },
+    "profit_factor_percentiles": {
+      "p05_tail": 2.54,
+      "p50_median": 3.06,
+      "p95_upper": 3.75
+    },
+    "max_consec_losses_p95": 7
+  },
+  "elapsed_sec": 21.61
+}

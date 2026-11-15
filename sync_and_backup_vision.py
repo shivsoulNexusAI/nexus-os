@@ -25,7 +25,7 @@ CRITICAL_FILES = [
 
 print("=" * 85)
 print("NEXUS QUANTITATIVE ECOSYSTEM: PRODUCTION BACKUP & SYNC ENGINE")
-print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Target: Account #278041169")
+print(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | Target: Account #278062039")
 print("=" * 85)
 
 # 1. Synchronize Engineering updates into Production Core
@@ -52,7 +52,7 @@ with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as zipf:
     # Include metadata manifest
     manifest_data = f"""# NEXUS UPDATED VISION SPECIFICATION (2025 - 2026 AUDIT)
 Backup Timestamp: {datetime.now().isoformat()}
-Trading Account: #278041169 (Exness-MT5Trial5)
+Trading Account: #278062039 (Exness-MT5Trial5)
 
 1. Profit Protection Architecture:
    - Tier 1: Fast BE-Lock at +0.75R

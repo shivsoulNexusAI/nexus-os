@@ -1,8 +1,8 @@
-{
-  "bot_token": "9288476562:AAEtFGf4kAfUS-tYmb6Lw-dulLEozwx_A5I",
-  "authorized_chat_id": "5279761713",
-  "bot_name": "@Nexus_Gold 24/7",
-  "bot_username": "@Nexusfurious_bot",
-  "account": 278041671,
-  "instrument": "XAUUSD"
+﻿{
+    "": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",
+    "authorized_chat_id": "5279761713",
+    "bot_name": "@Nexus_Gold 24/7",
+    "bot_username": "@Nexusfurious_bot",
+    "account": 278041671,
+    "instrument": "XAUUSD"
 }

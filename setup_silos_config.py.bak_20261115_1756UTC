@@ -1,0 +1,51 @@
+from pathlib import Path
+
+# 1. Quantower Majors Config
+quant_cfg = """# -*- coding: utf-8 -*-
+# SILO 1: QUANTOWER MAJORS
+TELEGRAM_BOT_TOKEN = "8883861115:AAGr4e8n99B772p_Z-1sQ6xX1J_Wf5Tx6Yw"
+TELEGRAM_CHAT_ID = "5279761713"
+TARGET_LOGIN = 278061453
+TERMINAL_PATH = r"C:/Program Files/MetaTrader 5 - Apex Satellite/terminal64.exe"
+"""
+Path(r"C:\Quant-Nexus-Eng\telegram_quantower_config.py").write_text(quant_cfg, encoding="utf-8")
+
+# 2. Nexus AI Bot Config
+nexus_cfg = """# -*- coding: utf-8 -*-
+# SILO 2: NEXUS AI BOT
+TELEGRAM_BOT_TOKEN = "8578781048:AAGxL21bM8e7kK_00a12xX99-Y_15Y5xU"
+TELEGRAM_CHAT_ID = "5279761713"
+TARGET_LOGIN = 278041169
+TERMINAL_PATH = r"C:/MT5_Quant_278061453/terminal64.exe"
+"""
+Path(r"C:\Quant-Nexus-Eng\telegram_nexus_config.py").write_text(nexus_cfg, encoding="utf-8")
+Path(r"C:\Quant-Nexus-Eng\telegram_config.py").write_text(nexus_cfg, encoding="utf-8")
+
+# 3. Gold 24/7 Config
+gold_cfg = """# -*- coding: utf-8 -*-
+# SILO 3: NEXUS GOLD 24/7 (HFT)
+TELEGRAM_BOT_TOKEN = "9288476562:AAH9p72q_KkL1x-0987123A-x_A5I"
+TELEGRAM_CHAT_ID = "5279761713"
+TARGET_LOGIN = 278041671
+TERMINAL_PATH = r"C:/MT5_HFT_278041671/terminal64.exe"
+"""
+# If you have the exact full string for 9288476562 saved in gold_telegram_config.json, preserve it:
+import json
+json_path = Path(r"C:\Quant-Nexus-Eng\gold_telegram_config.json")
+if json_path.exists():
+    try:
+        jdata = json.loads(json_path.read_text(encoding="utf-8"))
+        exact_tok = jdata.get("token") or jdata.get("bot_token")
+        if exact_tok:
+            gold_cfg = f"""# -*- coding: utf-8 -*-
+# SILO 3: NEXUS GOLD 24/7 (HFT)
+TELEGRAM_BOT_TOKEN = "{exact_tok}"
+TELEGRAM_CHAT_ID = "5279761713"
+TARGET_LOGIN = 278041671
+TERMINAL_PATH = r"C:/MT5_HFT_278041671/terminal64.exe"
+"""
+    except Exception:
+        pass
+Path(r"C:\Quant-Nexus-Eng\telegram_gold_config.py").write_text(gold_cfg, encoding="utf-8")
+
+print("[+] All 3 isolated configuration files written successfully.")

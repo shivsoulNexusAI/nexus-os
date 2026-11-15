@@ -1,0 +1,96 @@
+import psutil
+import json
+from pathlib import Path
+import MetaTrader5 as mt5
+
+BASE_DIR = Path(r"C:\Quant-Nexus-Eng")
+TARGET_LOGIN = 278061453
+TARGET_SERVER = "Exness-MT5Trial5"
+TARGET_PASS = r"H@ngkook3695"
+
+print("==========================================================")
+print("  QUANTNEXUS DEEP DELTA AUDIT // MULTI-TERMINAL IPC MAP   ")
+print("==========================================================")
+
+# 1. Enumerate every running terminal64.exe and map its exact path & permissions
+exe_paths = []
+for p in psutil.process_iter(['pid', 'name', 'exe']):
+    if p.info['name'] and p.info['name'].lower() == 'terminal64.exe':
+        exe = p.info['exe']
+        if exe and exe not in exe_paths:
+            exe_paths.append(exe)
+
+t1_path = None
+for idx, exe in enumerate(exe_paths, 1):
+    if mt5.initialize(path=exe):
+        acc = mt5.account_info()
+        term = mt5.terminal_info()
+        login = acc.login if acc else None
+        algo = term.trade_allowed if term else False
+        dll = term.dlls_allowed if term else False
+        print(f"[TERMINAL {idx}] Path: {exe}")
+        print(f"   Account: #{login} | Master AlgoTrading (Toolbar): {algo} | DLLs: {dll}")
+        if login == TARGET_LOGIN:
+            t1_path = exe
+        mt5.shutdown()
+    else:
+        print(f"[TERMINAL {idx}] Path: {exe} -> IPC Init Failed: {mt5.last_error()}")
+
+if not t1_path and exe_paths:
+    t1_path = exe_paths[0]
+
+# 2. Check quantum_institutional_pro.py execution method (Direct API vs FILE_COMMON bridge)
+qip_path = BASE_DIR / "quantum_institutional_pro.py"
+if qip_path.exists():
+    qip_code = qip_path.read_text(encoding="utf-8", errors="ignore")
+    uses_order_send = "order_send" in qip_code
+    uses_file_bridge = "FILE_COMMON" in qip_code or "Common\\Files" in qip_code or "commands" in qip_code
+    print(f"\n[*] quantum_institutional_pro.py Audit:")
+    print(f"   Direct mt5.order_send(): {uses_order_send} | File/Bridge Dispatch: {uses_file_bridge}")
+
+# 3. Bind omega_apex_scanner.py explicitly to t1_path so other terminals NEVER hijack IPC
+scanner_path = BASE_DIR / "omega_apex_scanner.py"
+if t1_path and scanner_path.exists():
+    sc_code = scanner_path.read_text(encoding="utf-8")
+    escaped_path = t1_path.replace("\\", "\\\\")
+    
+    # Replace generic mt5.initialize() with explicit path=t1_path
+    sc_code = sc_code.replace("if not mt5.initialize():", f'if not mt5.initialize(path=r"{t1_path}"):')
+    
+    # Ensure dynamic filling mode (IOC vs FOK) based on symbol_info.filling_mode
+    old_fill = '"type_filling": mt5.ORDER_FILLING_IOC,'
+    new_fill = '"type_filling": mt5.ORDER_FILLING_IOC if (info.filling_mode & 2) else mt5.ORDER_FILLING_FOK,'
+    if old_fill in sc_code:
+        sc_code = sc_code.replace(old_fill, new_fill)
+        
+    scanner_path.write_text(sc_code, encoding="utf-8")
+    print(f"\n[OK] Locked omega_apex_scanner.py to exact path: {t1_path}")
+
+# 4. Run live BTCUSD order_check() on the locked Terminal 1 path
+if t1_path and mt5.initialize(path=t1_path):
+    mt5.symbol_select("BTCUSD", True)
+    sym = mt5.symbol_info("BTCUSD")
+    tick = mt5.symbol_info_tick("BTCUSD")
+    term = mt5.terminal_info()
+    print(f"\n[*] Final Pre-Flight Check on #{TARGET_LOGIN}:")
+    print(f"   Master Toolbar Algo Trading: {term.trade_allowed}")
+    print(f"   BTCUSD Bid: {tick.bid} | Ask: {tick.ask}")
+    if tick.ask > 0:
+        fill_mode = mt5.ORDER_FILLING_IOC if (sym.filling_mode & 2) else mt5.ORDER_FILLING_FOK
+        req = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": "BTCUSD",
+            "volume": sym.volume_min,
+            "type": mt5.ORDER_TYPE_BUY,
+            "price": tick.ask,
+            "sl": round(tick.ask - 25000 * sym.point, sym.digits),
+            "tp": round(tick.ask + 50000 * sym.point, sym.digits),
+            "deviation": 30,
+            "magic": TARGET_LOGIN,
+            "comment": "OMEGA-APEX PreFlight",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": fill_mode,
+        }
+        chk = mt5.order_check(req)
+        print(f"   [ORDER_CHECK] Retcode: {chk.retcode} | Comment: {chk.comment}")
+    mt5.shutdown()

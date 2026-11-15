@@ -1,0 +1,41 @@
+{
+    "certified_at": "2026-11-12T07:49:17.809324+00:00",
+    "horizon": "2025-11-12 to 2026-11-12",
+    "true_profit_factor": 1.93,
+    "win_rate_pct": 60.1,
+    "net_pnl_usd": 1249.46,
+    "roi_pct": 124.9,
+    "max_dd_usd": 109.03,
+    "assets": {
+        "XAUUSD": {
+            "span": "2025-11-12 -> 2026-11-12",
+            "trades": 56,
+            "net_pnl": 172.0,
+            "win_rate": 62.5,
+            "pf": 1.55,
+            "t2_harvests": 22,
+            "avg_win": 13.79,
+            "avg_loss": -14.8
+        },
+        "US30": {
+            "span": "2025-11-12 -> 2026-11-12",
+            "trades": 169,
+            "net_pnl": 488.65,
+            "win_rate": 58.6,
+            "pf": 1.81,
+            "t2_harvests": 64,
+            "avg_win": 11.01,
+            "avg_loss": -8.59
+        },
+        "BTCUSD": {
+            "span": "2025-11-29 -> 2026-11-12",
+            "trades": 83,
+            "net_pnl": 588.81,
+            "win_rate": 61.4,
+            "pf": 2.37,
+            "t2_harvests": 37,
+            "avg_win": 19.98,
+            "avg_loss": -13.44
+        }
+    }
+}

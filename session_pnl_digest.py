@@ -1,8 +1,8 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QuantNexus Session-Close P&L Digest Daemon
 Calculates Gross Profit, Fees, Swaps, Net P&L, Win Rate, and Profit Factor
-across T1 (#278017866), T2 (#278041169), and T3 (#278041671).
+across T1 (#278062038), T2 (#278062039), and T3 (#278062042).
 Fires at London Close (16:00 UTC) and NY Close (21:00 UTC), or on-demand (--now).
 """
 import sys
@@ -35,9 +35,9 @@ logging.basicConfig(
 log = logging.getLogger("SessionDigest")
 
 FLEET = [
-    {"tag": "T1 Institutional", "login": 278017866, "path": r"C:\MT5_Quant_278017866\terminal64.exe"},
-    {"tag": "T2 4 Majors Grid", "login": 278041169, "path": r"C:\MT5_Pending_278041169\terminal64.exe"},
-    {"tag": "T3 Gold HFT",      "login": 278041671, "path": r"C:\MT5_HFT_278041671\terminal64.exe"}
+    {"tag": "T1 Institutional", "login": 278062038, "path": r"C:\MT5_Quant_278061453\terminal64.exe"},
+    {"tag": "T2 4 Majors Grid", "login": 278062039, "path": r"C:\MT5_Pending_278041169\terminal64.exe"},
+    {"tag": "T3 Gold HFT",      "login": 278062042, "path": r"C:\MT5_HFT_278041671\terminal64.exe"}
 ]
 
 def load_telegram_cfg():

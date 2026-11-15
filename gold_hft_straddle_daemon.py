@@ -1,7 +1,18 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
+
+# --- ROLLOVER LIQUIDITY SHIELD (Injected v2.4) ---
+from datetime import datetime, timezone
+def is_liquidity_gap_active():
+    utc_hour = datetime.now(timezone.utc).hour
+    utc_min = datetime.now(timezone.utc).minute
+    # Block new brackets between 21:55 UTC and 01:15 UTC (Spread expansion hours)
+    if utc_hour == 21 and utc_min >= 55: return True
+    if utc_hour in [22, 23, 0]: return True
+    if utc_hour == 1 and utc_min <= 15: return True
+    return False
 """
 QuantNexus Mission Charlie: T3 Gold HFT Volatility & ATR Band Adaptation
-Terminal 3 (#278041671) - Dynamic ATR & Choppiness Filter
+Terminal 3 (#278062042) - Dynamic ATR & Choppiness Filter
 Suppresses straddle order placement during low-liquidity chop / Asian consolidation.
 """
 import sys
@@ -36,7 +47,7 @@ logging.basicConfig(
 log = logging.getLogger("GoldHFT")
 
 TERMINAL_PATH = r"C:\MT5_HFT_278041671\terminal64.exe"
-ACCOUNT_ID = 278041671
+ACCOUNT_ID = 278062042
 SYMBOL = "XAUUSD"
 MAGIC_NUMBER = 777001
 
@@ -44,10 +55,10 @@ MAGIC_NUMBER = 777001
 ATR_PERIOD = 14
 MIN_ATR_NORMAL = 1.80      # Min $1.80 M5 range required
 MIN_ATR_ASIAN = 2.40       # Stricter $2.40 M5 range required during Asian session
-CHOP_THRESHOLD = 61.8      # CHOP >= 61.8 indicates consolidation chop (freeze straddle)
-STRADDLE_OFFSET_POINTS = 150 # 15 pips ($1.50)
-SL_POINTS = 120              # 12 pips ($1.20)
-TP_POINTS = 300              # 30 pips ($3.00)
+CHOP_THRESHOLD = 55.0         # Tighter chop filter (blocks quiet consolidation)      # CHOP >= 61.8 indicates consolidation chop (freeze straddle)
+STRADDLE_OFFSET_POINTS = 1500  # $1.50 dynamic breakout buffer # 15 pips ($1.50)
+SL_POINTS = 2000              # $2.00 stop loss (prevents spread chop)              # 12 pips ($1.20)
+TP_POINTS = 4500              # $4.50 target expansion (1:2.25 RR)              # 30 pips ($3.00)
 LOT_SIZE = 0.01
 
 def load_telegram_cfg():
@@ -183,8 +194,9 @@ def sync_gold_straddle():
     buy_stops = [o for o in orders if o.type == mt5.ORDER_TYPE_BUY_STOP]
     sell_stops = [o for o in orders if o.type == mt5.ORDER_TYPE_SELL_STOP]
 
-    target_buy_price = round(tick.ask + (STRADDLE_OFFSET_POINTS * point), 2)
-    target_sell_price = round(tick.bid - (STRADDLE_OFFSET_POINTS * point), 2)
+    digits = sym_info.digits
+    target_buy_price = round(tick.ask + (STRADDLE_OFFSET_POINTS * point), digits)
+    target_sell_price = round(tick.bid - (STRADDLE_OFFSET_POINTS * point), digits)
 
     # Re-center Buy Stop if displaced > 10 pips
     if not buy_stops:
@@ -194,8 +206,8 @@ def sync_gold_straddle():
             "volume": LOT_SIZE,
             "type": mt5.ORDER_TYPE_BUY_STOP,
             "price": target_buy_price,
-            "sl": round(target_buy_price - (SL_POINTS * point), 2),
-            "tp": round(target_buy_price + (TP_POINTS * point), 2),
+            "sl": round(target_buy_price - (SL_POINTS * point), digits),
+            "tp": round(target_buy_price + (TP_POINTS * point), digits),
             "deviation": 20,
             "magic": MAGIC_NUMBER,
             "comment": "GOLD_HFT_EXPANSION",
@@ -204,8 +216,11 @@ def sync_gold_straddle():
         }
         res = mt5.order_send(req)
         if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-            log.info("Placed Buy Stop @ %.2f (ATR: $%.2f, CHOP: %.1f)", target_buy_price, atr, chop)
-    elif abs(buy_stops[0].price_open - target_buy_price) > (100 * point):
+            log.info("Placed Buy Stop @ %.*f (ATR: $%.2f, CHOP: %.1f)", digits, target_buy_price, atr, chop)
+        else:
+            err = res.comment if res else mt5.last_error()
+            log.warning("Buy Stop Send Failed: %s (code %s)", err, getattr(res, 'retcode', 'None'))
+    elif abs(buy_stops[0].price_open - target_buy_price) > (2500 * point):
         # Cancel and re-center
         mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": buy_stops[0].ticket})
 
@@ -217,8 +232,8 @@ def sync_gold_straddle():
             "volume": LOT_SIZE,
             "type": mt5.ORDER_TYPE_SELL_STOP,
             "price": target_sell_price,
-            "sl": round(target_sell_price + (SL_POINTS * point), 2),
-            "tp": round(target_sell_price - (TP_POINTS * point), 2),
+            "sl": round(target_sell_price + (SL_POINTS * point), digits),
+            "tp": round(target_sell_price - (TP_POINTS * point), digits),
             "deviation": 20,
             "magic": MAGIC_NUMBER,
             "comment": "GOLD_HFT_EXPANSION",
@@ -227,8 +242,11 @@ def sync_gold_straddle():
         }
         res = mt5.order_send(req)
         if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-            log.info("Placed Sell Stop @ %.2f (ATR: $%.2f, CHOP: %.1f)", target_sell_price, atr, chop)
-    elif abs(sell_stops[0].price_open - target_sell_price) > (100 * point):
+            log.info("Placed Sell Stop @ %.*f (ATR: $%.2f, CHOP: %.1f)", digits, target_sell_price, atr, chop)
+        else:
+            err = res.comment if res else mt5.last_error()
+            log.warning("Sell Stop Send Failed: %s (code %s)", err, getattr(res, 'retcode', 'None'))
+    elif abs(sell_stops[0].price_open - target_sell_price) > (2500 * point):
         # Cancel and re-center
         mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": sell_stops[0].ticket})
 

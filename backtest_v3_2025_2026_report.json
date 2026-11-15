@@ -1,0 +1,68 @@
+[
+    {
+        "Symbol": "BTCUSD",
+        "Trades": 1868,
+        "WinRate%": 31.7,
+        "BE_Locks": 477,
+        "ProfitFactor": 0.91,
+        "NetPnL($)": -332.02,
+        "Return%": -33.2,
+        "MaxDD%": 41.25,
+        "FinalEq($)": 667.98
+    },
+    {
+        "Symbol": "XAUUSD",
+        "Trades": 2688,
+        "WinRate%": 33.9,
+        "BE_Locks": 708,
+        "ProfitFactor": 0.98,
+        "NetPnL($)": -114.66,
+        "Return%": -11.5,
+        "MaxDD%": 29.32,
+        "FinalEq($)": 885.34
+    },
+    {
+        "Symbol": "EURUSD",
+        "Trades": 598,
+        "WinRate%": 28.9,
+        "BE_Locks": 169,
+        "ProfitFactor": 0.92,
+        "NetPnL($)": -85.55,
+        "Return%": -8.6,
+        "MaxDD%": 26.77,
+        "FinalEq($)": 914.45
+    },
+    {
+        "Symbol": "GBPUSD",
+        "Trades": 908,
+        "WinRate%": 30.3,
+        "BE_Locks": 238,
+        "ProfitFactor": 0.92,
+        "NetPnL($)": -136.16,
+        "Return%": -13.6,
+        "MaxDD%": 22.59,
+        "FinalEq($)": 863.84
+    },
+    {
+        "Symbol": "USDJPY",
+        "Trades": 1031,
+        "WinRate%": 33.1,
+        "BE_Locks": 302,
+        "ProfitFactor": 0.95,
+        "NetPnL($)": -96.09,
+        "Return%": -9.6,
+        "MaxDD%": 19.79,
+        "FinalEq($)": 903.91
+    },
+    {
+        "Symbol": "GBPJPY",
+        "Trades": 1520,
+        "WinRate%": 29.4,
+        "BE_Locks": 431,
+        "ProfitFactor": 0.79,
+        "NetPnL($)": -437.75,
+        "Return%": -43.8,
+        "MaxDD%": 44.19,
+        "FinalEq($)": 562.25
+    }
+]

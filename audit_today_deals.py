@@ -1,8 +1,8 @@
 import MetaTrader5 as mt5
 from datetime import datetime, timedelta
 
-TERMINAL = r"C:/MT5_Pending_278041169/terminal64.exe"
-if mt5.initialize(path=TERMINAL, portable=True):
+TERMINAL = r"C:/MT5_Quant_278061453/terminal64.exe"
+if mt5.initialize(path=TERMINAL, portable=False):
     acc = mt5.account_info()
     now = datetime.now()
     deals = mt5.history_deals_get(now - timedelta(hours=24), now) or []

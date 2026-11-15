@@ -1,0 +1,77 @@
+﻿{
+    "account":  278041169,
+    "terminal_path":  "C:/MT5_Pending_278041169/terminal64.exe",
+    "global_risk":  {
+                        "max_account_drawdown_pct":  3.0,
+                        "max_open_brackets":  4
+                    },
+    "asset_matrix":  {
+                         "XAUUSD":  {
+                                        "strategy":  "Asian_High_Low_Straddle",
+                                        "lot":  0.01,
+                                        "max_exposure":  0.04,
+                                        "buffer_points":  600,
+                                        "sl_points":  800,
+                                        "be_tier1_points":  500,
+                                        "be_lock_points":  150,
+                                        "be_tier2_points":  1200,
+                                        "harvest_pct":  0.5
+                                    },
+                         "US30":  {
+                                      "strategy":  "NY_Open_Momentum_Bracket",
+                                      "lot":  0.05,
+                                      "max_exposure":  0.1,
+                                      "buffer_points":  150,
+                                      "sl_points":  200,
+                                      "be_tier1_points":  150,
+                                      "be_lock_points":  40,
+                                      "be_tier2_points":  300,
+                                      "harvest_pct":  0.5
+                                  },
+                         "BTCUSD":  {
+                                        "strategy":  "Volatility_Compression_Straddle",
+                                        "lot":  0.01,
+                                        "max_exposure":  0.03,
+                                        "buffer_points":  3500,
+                                        "sl_points":  4000,
+                                        "be_tier1_points":  2500,
+                                        "be_lock_points":  500,
+                                        "be_tier2_points":  5000,
+                                        "harvest_pct":  0.5
+                                    },
+                         "EURUSD":  {
+                                        "strategy":  "Session_Grid_Straddle",
+                                        "lot":  0.02,
+                                        "max_exposure":  0.08,
+                                        "buffer_points":  80,
+                                        "sl_points":  120,
+                                        "be_tier1_points":  120,
+                                        "be_lock_points":  15,
+                                        "be_tier2_points":  250,
+                                        "harvest_pct":  0.5
+                                    },
+                         "GBPUSD":  {
+                                        "strategy":  "Session_Grid_Straddle",
+                                        "lot":  0.02,
+                                        "max_exposure":  0.08,
+                                        "buffer_points":  100,
+                                        "sl_points":  150,
+                                        "be_tier1_points":  150,
+                                        "be_lock_points":  20,
+                                        "be_tier2_points":  280,
+                                        "harvest_pct":  0.5
+                                    },
+                         "USDJPY":  {
+                                        "strategy":  "H4_Structure_Straddle",
+                                        "lot":  0.01,
+                                        "max_exposure":  0.04,
+                                        "buffer_points":  120,
+                                        "sl_points":  160,
+                                        "be_tier1_points":  160,
+                                        "be_lock_points":  20,
+                                        "be_tier2_points":  320,
+                                        "harvest_pct":  0.5
+                                    }
+                     },
+    "portable":  true
+}

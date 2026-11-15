@@ -2,7 +2,7 @@
 """
 QUANT-NEXUS DEEP DELTA 60s AUTO-SCANNER & AUTO-TRIGGER VISION ENGINE
 Cycles every 60s:
-1. Re-evaluates Account #278017866 (Silo 1), #278041169 (Silo 2), #278041671 (Silo 3).
+1. Re-evaluates Account #278062038 (Silo 1), #278062039 (Silo 2), #278062042 (Silo 3).
 2. Computes Half-Kelly Mathematical Position Sizing for active setups.
 3. Auto-triggers sizing reconciliation and trade execution if liquidity sweep confirms.
 """
@@ -22,13 +22,13 @@ logging.basicConfig(
 log = logging.getLogger("DeepDeltaVision")
 
 SILO_1_PATH = r"C:/Program Files/MetaTrader 5 - Apex Satellite/terminal64.exe"
-SILO_2_PATH = r"C:/MT5_Quant_278017866/terminal64.exe"
+SILO_2_PATH = r"C:/MT5_Quant_278061453/terminal64.exe"
 SILO_3_PATH = r"C:/MT5_HFT_278041671/terminal64.exe"
 
 SILOS = [
-    {"name": "Silo 1 (Silver Bullet)", "login": 278017866, "path": SILO_1_PATH, "portable": False, "symbol": "USDJPY"},
-    {"name": "Silo 2 (Majors Grid)",   "login": 278041169, "path": SILO_2_PATH, "portable": False, "symbol": "GBPUSD"},
-    {"name": "Silo 3 (Gold HFT)",      "login": 278041671, "path": SILO_3_PATH, "portable": True,  "symbol": "XAUUSD"}
+    {"name": "Silo 1 (Silver Bullet)", "login": 278062038, "path": SILO_1_PATH, "portable": False, "symbol": "USDJPY"},
+    {"name": "Silo 2 (Majors Grid)",   "login": 278062039, "path": SILO_2_PATH, "portable": False, "symbol": "GBPUSD"},
+    {"name": "Silo 3 (Gold HFT)",      "login": 278062042, "path": SILO_3_PATH, "portable": True,  "symbol": "XAUUSD"}
 ]
 
 def calculate_half_kelly(equity: float, sym_info, sl_distance_points: float,
