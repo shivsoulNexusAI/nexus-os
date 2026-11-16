@@ -11,3 +11,9 @@ clean_deploy_*.py
 make_golden_*.py
 confirm_quad_*.py
 *.bak
+
+__pycache__/
+*.pyc
+logs/
+*.log
+Quant-Nexus-Telegram-bot/nssm.exe
