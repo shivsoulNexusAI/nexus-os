@@ -17,3 +17,22 @@ __pycache__/
 logs/
 *.log
 Quant-Nexus-Telegram-bot/nssm.exe
+
+# --- Nexus OS Security & Size Guards ---
+.env
+*.env
+*secret*
+*token*.json
+__pycache__/
+*.pyc
+.venv/
+venv/
+logs/
+*.log
+*.zip
+*.hcc
+*.tkc
+*.exe
+*.db
+*.sqlite*
+prometheus_data/
