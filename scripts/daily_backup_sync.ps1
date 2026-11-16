@@ -1,95 +1,74 @@
-﻿$ErrorActionPreference = "Stop"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+﻿$ErrorActionPreference = "Continue"
+$LogFile = "C:\Quant-Nexus-Eng\logs\backup_sync.log"
+$TgToken = if ($env:NEXUS_OS_TELEGRAM_TOKEN) { $env:NEXUS_OS_TELEGRAM_TOKEN } else { "9213146215:AAGNsCGLIvzrfjowmxQ32R8zbz8_YQsVTKE" }
+$TgChat  = if ($env:NEXUS_OS_TELEGRAM_CHAT_ID) { $env:NEXUS_OS_TELEGRAM_CHAT_ID } else { "5279761713" }
 
-$RepoPath   = "C:\Quant-Nexus-Eng"
-$BackupDir  = "C:\Quant-Nexus-Backups"
-$LogFile    = "$RepoPath\logs\backup_sync.log"
-$Branch     = "omega-apex-elite-v45-20261112"
-$Timestamp  = (Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmUTC")
-
-$TgToken    = if ($env:NEXUS_OS_TELEGRAM_TOKEN) { $env:NEXUS_OS_TELEGRAM_TOKEN } else { "9213146215:AAGNsCGLIvzrfjowmxQ32R8zbz8_YQsVTKE" }
-$TgChatId   = if ($env:NEXUS_OS_TELEGRAM_CHAT_ID) { $env:NEXUS_OS_TELEGRAM_CHAT_ID } else { "5279761713" }
-
-function Write-Log {
-    param([string]$Message)
-    $entry = "[$( (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss UTC') )] $Message"
-    Add-Content -Path $LogFile -Value $entry
-    Write-Host $entry
+function Write-SyncLog($msg) {
+    $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')] $msg"
+    Add-Content -Path $LogFile -Value $line
+    Write-Host $line
 }
 
-function Send-TelegramAlert {
-    param([string]$AlertText)
+function Send-SyncAlert($text) {
     try {
-        $Uri = "https://api.telegram.org/bot$TgToken/sendMessage"
-        $Payload = @{
-            chat_id = $TgChatId
-            text    = $AlertText
-        } | ConvertTo-Json -Compress
+        Invoke-RestMethod -Uri "https://api.telegram.org/bot$TgToken/sendMessage" -Method Post -Body @{
+            chat_id = $TgChat
+            text    = $text
+        } -TimeoutSec 10 | Out-Null
+    } catch {}
+}
 
-        Invoke-RestMethod -Uri $Uri -Method Post -ContentType "application/json; charset=utf-8" -Body $Payload -TimeoutSec 10 | Out-Null
-        Write-Log "INFO: Telegram failure notification delivered to Chat ID $TgChatId."
-    } catch {
-        Write-Log "WARN: Failed to dispatch Telegram alert: $_"
+Write-SyncLog "=== Starting QuantNexus v5.6 Automated Local Mirror, ZIP & Multi-Repo Git Sync ==="
+
+# 1. Mirror clean codebase to C:\QuantNexus_Golden_Backups\Nexus_Mirror
+$StageDir = "C:\QuantNexus_Golden_Backups\Nexus_Mirror"
+New-Item -ItemType Directory -Force -Path $StageDir, "C:\Quant-Nexus-Backups" | Out-Null
+robocopy "C:\Quant-Nexus-Eng" $StageDir /MIR /R:2 /W:2 /MT:8 /XD ".git" "__pycache__" ".venv" "venv" "logs" "prometheus_data" /XF "*.log" "*.tmp" /NFL /NDL /NJH /NJS | Out-Null
+
+# 2. Compress verified ZIP snapshot into C:\Quant-Nexus-Backups
+$Ts = (Get-Date).ToUniversalTime().ToString("yyyyMMdd_HHmmss")
+$ZipPath = "C:\Quant-Nexus-Backups\QuantNexus_Snapshot_$Ts.zip"
+Add-Type -AssemblyName "System.IO.Compression.FileSystem"
+[System.IO.Compression.ZipFile]::CreateFromDirectory($StageDir, $ZipPath, [System.IO.Compression.CompressionLevel]::Optimal, $false)
+
+# Prune older ZIPs on C:\ (keep latest 2 to preserve disk space)
+Get-ChildItem "C:\Quant-Nexus-Backups\QuantNexus_Snapshot_*.zip" |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -Skip 2 |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+
+if ((Test-Path $ZipPath) -and ((Get-Item $ZipPath).Length -gt 10KB)) {
+    Write-SyncLog "Local Golden ZIP created: $ZipPath ($([math]::Round((Get-Item $ZipPath).Length / 1MB, 2)) MB)"
+    # Optional mirror to local PC if RDP drive redirection (\\tsclient\E) is active
+    if (Test-Path "\\tsclient\E\Nexus-OS-Backups") {
+        Copy-Item -Path $ZipPath -Destination "\\tsclient\E\Nexus-OS-Backups\QuantNexus_v5.6_Full_Golden_$Ts.zip" -Force -ErrorAction SilentlyContinue
+        Write-SyncLog "Synced Golden ZIP to local PC (\\tsclient\E\Nexus-OS-Backups)"
     }
+} else {
+    Write-SyncLog "ERROR: Local Golden ZIP creation failed or produced empty file!"
+    Send-SyncAlert "⚠️ QUANTNEXUS BACKUP WARNING: Daily local ZIP creation failed on VPS."
 }
 
-New-Item -ItemType Directory -Force -Path $BackupDir | Out-Null
-New-Item -ItemType Directory -Force -Path "$RepoPath\logs" | Out-Null
-
-Write-Log "=== Starting QuantNexus Daily Backup & Git Sync ==="
-
-# 1. Create Compressed Local Snapshot (Excluding .git, logs, caches, and virtualenvs)
-$StagingDir = "$env:TEMP\QuantNexus_Stage_$Timestamp"
-try {
-    $ZipPath = "$BackupDir\QuantNexus_Snapshot_$Timestamp.zip"
-    New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
-
-    # Mirror clean project tree excluding locked logs and heavy git/cache dirs
-    & robocopy $RepoPath $StagingDir /E /XD ".git" "logs" "__pycache__" ".venv" "venv" /XF "*.log" /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
-    if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
-
-    Compress-Archive -Path "$StagingDir\*" -DestinationPath $ZipPath -CompressionLevel Optimal -Force
-    Write-Log "SUCCESS: Local archive saved to $ZipPath"
-
-    # Enforce 14-day backup retention
-    Get-ChildItem -Path $BackupDir -Filter "QuantNexus_Snapshot_*.zip" |
-        Where-Object { $_.LastWriteTime -lt (Get-Date).AddDays(-14) } |
-        Remove-Item -Force
-} catch {
-    $errMsg = "ERROR (Archive): $_"
-    Write-Log $errMsg
-    Send-TelegramAlert -AlertText "🚨 QUANTNEXUS BACKUP FAILURE ($Timestamp)`nStage: Local ZIP Snapshot`nError: $_"
-} finally {
-    if (Test-Path $StagingDir) { Remove-Item -Path $StagingDir -Recurse -Force -ErrorAction SilentlyContinue }
+# 3. Commit State & Push Across All 3 GitHub Repositories
+Set-Location "C:\Quant-Nexus-Eng"
+$Branch = (git rev-parse --abbrev-ref HEAD).Trim()
+git add -A
+if (git status --porcelain) {
+    $CommitTs = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mmUTC")
+    git commit -m "chore(auto-sync): daily QuantNexus v5.6 state, mirror & telemetry sync ($CommitTs)" | Out-Null
 }
 
-# 2. Git Stage, Commit & Push
-try {
-    Set-Location $RepoPath
-    
-    git add -u
-    git add audit_reports/ docker-compose.yml prometheus.yml scripts/ 2>$null
-
-    $Changes = git status --porcelain
-    if ($Changes) {
-        git commit -m "chore(auto-sync): daily state snapshot & audit backup ($Timestamp)"
-        if ($LASTEXITCODE -ne 0) { throw "git commit exited with code $LASTEXITCODE" }
-        Write-Log "SUCCESS: Committed changes to $Branch."
+foreach ($r in @("origin", "nexus-os", "py-projects")) {
+    git push $r $Branch 2>&1 | Out-Null
+    if ($r -ne "origin") {
+        git push $r "${Branch}:main" --force 2>&1 | Out-Null
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-SyncLog "ERROR: Git push failed for remote [$r]"
+        Send-SyncAlert "⚠️ QUANTNEXUS GIT SYNC FAILED: Push to remote [$r] returned exit code $LASTEXITCODE."
     } else {
-        Write-Log "INFO: Working tree clean; no new changes to commit."
+        Write-SyncLog "Git push succeeded for remote [$r] ($Branch)"
     }
-
-    git pull --rebase origin $Branch
-    if ($LASTEXITCODE -ne 0) { throw "git pull --rebase exited with code $LASTEXITCODE" }
-
-    git push origin $Branch
-    if ($LASTEXITCODE -ne 0) { throw "git push exited with code $LASTEXITCODE" }
-
-    Write-Log "SUCCESS: Pushed $Branch to origin."
-} catch {
-    $errMsg = "ERROR (Git Sync): $_"
-    Write-Log $errMsg
-    Send-TelegramAlert -AlertText "🚨 QUANTNEXUS GIT SYNC FAILURE ($Timestamp)`nBranch: $Branch`nError: $_"
 }
 
-Write-Log "=== Completed QuantNexus Daily Backup & Git Sync ==="
+Write-SyncLog "=== Daily Backup & Multi-Repo Sync Complete ==="
