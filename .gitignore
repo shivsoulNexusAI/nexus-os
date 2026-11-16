@@ -36,3 +36,6 @@ logs/
 *.db
 *.sqlite*
 prometheus_data/
+
+*credentials*.json
+google_credentials.json
