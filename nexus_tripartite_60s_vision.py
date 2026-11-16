@@ -377,9 +377,16 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
 
     risk_usd = equity * 0.0068
     sl_dist = ev["atr14"] * 1.5
-    tp_dist = sl_dist * 1.85
     tick_val = info.trade_tick_value if info.trade_tick_value > 0 else 1.0
     tick_size = info.trade_tick_size if info.trade_tick_size > 0 else info.point
+
+    # Cap T3 (XAUUSD) max stop-loss risk at .00 (1.0% of sleeve) on minimum 0.01L entries
+    if sleeve == "T3":
+        max_sl_dist_for_10usd = (10.0 / max(1e-9, info.volume_min * tick_val)) * tick_size
+        sl_dist = min(sl_dist, max_sl_dist_for_10usd)
+        risk_usd = min(risk_usd, 10.0)
+
+    tp_dist = sl_dist * 1.85
     raw_lots = risk_usd / (max(1.0, sl_dist / tick_size) * tick_val)
     step = info.volume_step if info.volume_step > 0 else 0.01
     lots = round(max(info.volume_min, min(info.volume_max, math.floor(raw_lots / step) * step)), 2)
@@ -646,3 +653,4 @@ if __name__ == "__main__":
             run_dissolve_hud_cycle(force_brush_away=False)
         except Exception as err:
             log.exception(f"Unhandled error in Dissolve HUD 60s loop: {err}")
+
