@@ -377,6 +377,16 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
                 rem = max(1, int(math.ceil(30.0 - mins_ago)))
                 return f"SL-CD({rem}m)", False
 
+    # 30-minute per-symbol cooldown after a stop-loss / losing exit
+    from datetime import timedelta
+    deals = mt5.history_deals_get(now_utc - timedelta(minutes=35), now_utc + timedelta(minutes=5)) or []
+    for d in reversed(deals):
+        if d.symbol == sym and d.entry == mt5.DEAL_ENTRY_OUT and float(d.profit) < 0.0:
+            mins_ago = (now_utc.timestamp() - float(d.time)) / 60.0
+            if 0.0 <= mins_ago < 30.0:
+                rem = max(1, int(math.ceil(30.0 - mins_ago)))
+                return f"SL-CD({rem}m)", False
+
     info = mt5.symbol_info(sym)
     if info is None or ev["atr14"] <= 0:
         return "SYM-ERR", False
@@ -663,5 +673,6 @@ if __name__ == "__main__":
             run_dissolve_hud_cycle(force_brush_away=False)
         except Exception as err:
             log.exception(f"Unhandled error in Dissolve HUD 60s loop: {err}")
+
 
 
