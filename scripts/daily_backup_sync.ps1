@@ -38,11 +38,17 @@ New-Item -ItemType Directory -Force -Path "$RepoPath\logs" | Out-Null
 
 Write-Log "=== Starting QuantNexus Daily Backup & Git Sync ==="
 
-# 1. Create Compressed Local Snapshot (Excluding .git, caches, and virtualenvs)
+# 1. Create Compressed Local Snapshot (Excluding .git, logs, caches, and virtualenvs)
+$StagingDir = "$env:TEMP\QuantNexus_Stage_$Timestamp"
 try {
     $ZipPath = "$BackupDir\QuantNexus_Snapshot_$Timestamp.zip"
-    $ItemsToArchive = Get-ChildItem -Path $RepoPath -Exclude @(".git", "__pycache__", ".venv", "venv")
-    Compress-Archive -Path $ItemsToArchive.FullName -DestinationPath $ZipPath -CompressionLevel Optimal -Force
+    New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
+
+    # Mirror clean project tree excluding locked logs and heavy git/cache dirs
+    & robocopy $RepoPath $StagingDir /E /XD ".git" "logs" "__pycache__" ".venv" "venv" /XF "*.log" /NFL /NDL /NJH /NJS /NC /NS /NP | Out-Null
+    if ($LASTEXITCODE -ge 8) { throw "robocopy failed with exit code $LASTEXITCODE" }
+
+    Compress-Archive -Path "$StagingDir\*" -DestinationPath $ZipPath -CompressionLevel Optimal -Force
     Write-Log "SUCCESS: Local archive saved to $ZipPath"
 
     # Enforce 14-day backup retention
@@ -53,6 +59,8 @@ try {
     $errMsg = "ERROR (Archive): $_"
     Write-Log $errMsg
     Send-TelegramAlert -AlertText "🚨 QUANTNEXUS BACKUP FAILURE ($Timestamp)`nStage: Local ZIP Snapshot`nError: $_"
+} finally {
+    if (Test-Path $StagingDir) { Remove-Item -Path $StagingDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
 
 # 2. Git Stage, Commit & Push
