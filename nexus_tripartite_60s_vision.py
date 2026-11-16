@@ -175,14 +175,14 @@ def manage_open_positions(sleeve: str, positions: list) -> dict[int, str]:
                 mode_tag = f"TRAIL@{r_mult:.1f}R"
             else:
                 badges[p.ticket] = f"TRAIL-HOLD({r_mult:.1f}R)"
-        elif r_mult >= 1.0:
-            be_lock = round((entry + r_dist * 0.12) if is_buy else (entry - r_dist * 0.12), digits)
+        elif r_mult >= 0.75:
+            be_lock = round((entry + r_dist * 0.10) if is_buy else (entry - r_dist * 0.10), digits)
             if is_buy and cur_sl < be_lock - info.point and (spot - be_lock) >= stops_min:
                 new_sl = be_lock
-                mode_tag = "BE+0.12R"
+                mode_tag = "BE+0.10R"
             elif (not is_buy) and (cur_sl == 0.0 or cur_sl > be_lock + info.point) and (be_lock - spot) >= stops_min:
                 new_sl = be_lock
-                mode_tag = "BE+0.12R"
+                mode_tag = "BE+0.10R"
             else:
                 badges[p.ticket] = "BE-LOCKED"
 
@@ -367,25 +367,37 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
     if len(all_sleeve_pos) >= max_pos:
         return f"CAP-MAX({len(all_sleeve_pos)}/{max_pos})", False
 
-    # 30-minute per-symbol cooldown after a stop-loss / losing exit
+    # Final Production Policy:
+    # A) 2-Strike Daily Kill-Switch per symbol (DAY-SL-LOCK) + 30-min post-SL Cooldown (SL-CD)
     from datetime import timedelta
-    deals = mt5.history_deals_get(now_utc - timedelta(minutes=35), now_utc + timedelta(minutes=5)) or []
+    day_start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    deals = mt5.history_deals_get(day_start_utc - timedelta(minutes=35), now_utc + timedelta(minutes=5)) or []
+    daily_sym_losses = 0
     for d in reversed(deals):
         if d.symbol == sym and d.entry == mt5.DEAL_ENTRY_OUT and float(d.profit) < 0.0:
+            if float(d.time) >= day_start_utc.timestamp():
+                daily_sym_losses += 1
             mins_ago = (now_utc.timestamp() - float(d.time)) / 60.0
             if 0.0 <= mins_ago < 30.0:
                 rem = max(1, int(math.ceil(30.0 - mins_ago)))
                 return f"SL-CD({rem}m)", False
+    if daily_sym_losses >= 2:
+        return f"DAY-SL-LOCK({daily_sym_losses}/2)", False
 
-    # 30-minute per-symbol cooldown after a stop-loss / losing exit
-    from datetime import timedelta
-    deals = mt5.history_deals_get(now_utc - timedelta(minutes=35), now_utc + timedelta(minutes=5)) or []
-    for d in reversed(deals):
-        if d.symbol == sym and d.entry == mt5.DEAL_ENTRY_OUT and float(d.profit) < 0.0:
-            mins_ago = (now_utc.timestamp() - float(d.time)) / 60.0
-            if 0.0 <= mins_ago < 30.0:
-                rem = max(1, int(math.ceil(30.0 - mins_ago)))
-                return f"SL-CD({rem}m)", False
+    # B) T2 USD-Basket Correlation Guard: block stacking 2 identical directional USD bets
+    if sleeve == "T2" and all_sleeve_pos:
+        def _usd_bias(s_name: str, is_long: bool) -> int:
+            s_up = s_name.upper()
+            if s_up.startswith("USD"):
+                return 1 if is_long else -1
+            if "USD" in s_up:
+                return -1 if is_long else 1
+            return 0  # Non-USD cross (e.g., GBPJPY)
+        cand_bias = _usd_bias(sym, ev["direction"] == "BUY")
+        if cand_bias != 0:
+            for op in all_sleeve_pos:
+                if _usd_bias(op.symbol, op.type == 0) == cand_bias:
+                    return f"USD-CORR({op.symbol})", False
 
     info = mt5.symbol_info(sym)
     if info is None or ev["atr14"] <= 0:
@@ -400,10 +412,11 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
     tick_val = info.trade_tick_value if info.trade_tick_value > 0 else 1.0
     tick_size = info.trade_tick_size if info.trade_tick_size > 0 else info.point
 
-    # Cap T3 (XAUUSD) max stop-loss risk at .00 (1.0% of sleeve) on minimum 0.01L entries
+    # C) T3 (XAUUSD) Strict $10.00 Min-Lot ATR Gate: reject over-volatile regimes instead of pinching SL
     if sleeve == "T3":
-        max_sl_dist_for_10usd = (10.0 / max(1e-9, info.volume_min * tick_val)) * tick_size
-        sl_dist = min(sl_dist, max_sl_dist_for_10usd)
+        min_lot_sl_usd = (sl_dist / max(1e-9, tick_size)) * info.volume_min * tick_val
+        if min_lot_sl_usd > 10.0:
+            return f"ATR-CAP(${min_lot_sl_usd:.1f}>$10)", False
         risk_usd = min(risk_usd, 10.0)
 
     tp_dist = sl_dist * 1.85
@@ -579,7 +592,9 @@ def run_dissolve_hud_cycle(force_brush_away: bool = False) -> None:
         max_pos = scfg["max_positions"]
 
         for _, ev in exec_order:
-            if ev["score"] >= gate and ev["direction"] in ("BUY", "SELL"):
+            if ev["score"] >= gate and ev["direction"] in ("BUY", "SELL") and ev.get("ict_tag", "NEUTRAL") == "NEUTRAL":
+                ev["exec_tag"] = "ICT-WAIT"
+            elif ev["score"] >= gate and ev["direction"] in ("BUY", "SELL"):
                 if sleeve == "T3":
                     mc_dd = run_live_mc_dd(ev["score"])
                     if mc_dd <= 10.0:
