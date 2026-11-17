@@ -402,6 +402,12 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
         "kf_gain": kf["gain"],
         "kf_z": kf["z_score"],
         "kf_bias": kf["regime_bias"],
+        "tox_eff": kf.get("tox_eff", 0.0),
+        "gm_state": kf.get("gm_state", "N/A"),
+        "as_skew_atr": kf.get("as_skew_atr", 0.0),
+        "as_state": kf.get("as_state", "N/A"),
+        "gamma_vr": kf.get("gamma_vr", 1.0),
+        "gamma_regime": kf.get("gamma_regime", "N/A"),
     }
 
 
