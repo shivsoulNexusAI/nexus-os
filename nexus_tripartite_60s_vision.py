@@ -1,4 +1,4 @@
-﻿import json
+import json
 import time
 import math
 import httpx
@@ -28,21 +28,47 @@ log = logging.getLogger("ShivSoulDissolveHUD")
 
 SILO_CONFIG = {
     "T1": {
-        "title": "🔱 SHIVSOUL NEXUS // T1 BTCUSD DESK v5.6",
+        "title": "?? SHIVSOUL NEXUS // T1 BTCUSD CRYPTO DESK v6.0",
         "account": 278062038,
         "gate": 82.0,
+        "max_score": 98.0,
         "max_positions": 1,
-        "gate_label": "T1(BTC) >= 82% | Top-Down + Delta + tVPIN",
+        "utc_hours": list(range(0, 24)),
+        "allowed_ict": ("OB+IFVG", "VAL-RECLAIM", "EMA-FLOW"),
+        "max_spr_atr": 0.12,
+        "risk_pct": 0.0045,
+        "max_risk_usd": 5.0,
+        "sl_atr_mult": 2.0,
+        "tp_r_mult": 2.50,
+        "be_trigger_r": 1.10,
+        "be_lock_r": 0.15,
+        "trail_trigger_r": 1.80,
+        "trail_atr_mult": 1.2,
+        "max_daily_sleeve_losses": 2,
+        "gate_label": "T1(BTC) 82-98% | 24/7 Crypto | 2.0xATR | BE@+1.1R",
         "assets": [
             (["BTCUSDm", "BTCUSD"], "M15"),
         ],
     },
     "T2": {
-        "title": "🔱 SHIVSOUL NEXUS // T2 FX MAJORS DESK v5.6",
+        "title": "?? SHIVSOUL NEXUS // T2 FX NY-KZ DESK v6.0",
         "account": 278062039,
-        "gate": 78.0,
+        "gate": 80.0,
+        "max_score": 89.0,
         "max_positions": 2,
-        "gate_label": "T2(FX-6) >= 78% | Max-2 Cap + OB/IFVG + SprShield",
+        "utc_hours": [13, 14, 15, 16, 17],
+        "allowed_ict": ("OB+IFVG", "VAL-RECLAIM"),
+        "max_spr_atr": 0.15,
+        "risk_pct": 0.0060,
+        "max_risk_usd": 6.5,
+        "sl_atr_mult": 1.6,
+        "tp_r_mult": 2.00,
+        "be_trigger_r": 0.90,
+        "be_lock_r": 0.12,
+        "trail_trigger_r": 1.60,
+        "trail_atr_mult": 1.0,
+        "max_daily_sleeve_losses": 2,
+        "gate_label": "T2(FX) 80-89% | NY 13-17UTC | OB/VAL | CCY-Mutex | BE@+0.9R",
         "assets": [
             (["EURUSDm", "EURUSD"], "M15"),
             (["GBPUSDm", "GBPUSD"], "M15"),
@@ -53,11 +79,24 @@ SILO_CONFIG = {
         ],
     },
     "T3": {
-        "title": "🔱 SHIVSOUL NEXUS // T3 XAUUSD GOLD DESK v5.6",
+        "title": "?? SHIVSOUL NEXUS // T3 XAUUSD BULLION DESK v6.0",
         "account": 278062042,
-        "gate": 80.0,
+        "gate": 82.0,
+        "max_score": 98.0,
         "max_positions": 1,
-        "gate_label": "T3(XAU) >= 80% | Delta + Cronus ML + Live MC",
+        "utc_hours": [13, 14, 15, 16, 17],
+        "allowed_ict": ("OB+IFVG", "VAL-RECLAIM"),
+        "max_spr_atr": 0.14,
+        "risk_pct": 0.0075,
+        "max_risk_usd": 8.0,
+        "sl_atr_mult": 1.8,
+        "tp_r_mult": 2.50,
+        "be_trigger_r": 1.15,
+        "be_lock_r": 0.15,
+        "trail_trigger_r": 1.85,
+        "trail_atr_mult": 1.2,
+        "max_daily_sleeve_losses": 2,
+        "gate_label": "T3(XAU) >= 82% | NY 13-17UTC | $8 ATR-Cap | BE@+1.15R",
         "assets": [
             (["XAUUSDm", "XAUUSD"], "M15"),
         ],
@@ -128,36 +167,39 @@ def get_session_globe_tag(now_utc: datetime, cycle_num: int) -> str:
 
 def manage_open_positions(sleeve: str, positions: list) -> dict[int, str]:
     """
-    Enforces +1.0R Breakeven Lock (+0.12R buffer) and +1.5R ATR(14) Trailing Stop
-    across all open positions in the active sleeve. Returns ticket -> status badge.
+    Enforces terminal-isolated Breakeven Lock and ATR(14) Trailing Stop
+    reconstructing true initial 1R from original order SL.
     """
     badges: dict[int, str] = {}
+    scfg = SILO_CONFIG[sleeve]
     for p in positions:
         sym = p.symbol
-        info = mt5.symbol_info(sym)
         tick = mt5.symbol_info_tick(sym)
-        if info is None or tick is None:
+        info = mt5.symbol_info(sym)
+        if not is_valid_live_tick(tick) or info is None:
             continue
 
         r_m15 = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M15, 0, 30)
         atr14 = calc_atr14(r_m15)
         if atr14 <= 0:
-            atr14 = abs(p.price_open - p.sl) / 1.5 if p.sl > 0 else 0.0
+            atr14 = abs(p.price_open - p.sl) / scfg["sl_atr_mult"] if p.sl > 0 else 0.0
         if atr14 <= 0:
             continue
 
-        is_buy = (p.type == 0)
+        is_buy = p.type == 0
         entry = float(p.price_open)
         cur_sl = float(p.sl)
         cur_tp = float(p.tp)
-        spot = float(tick.bid) if is_buy else float(tick.ask)
+        spot = float(tick.bid if is_buy else tick.ask)
         digits = info.digits
-        stops_min = max(info.trade_stops_level * info.point, 2 * info.point)
+        stops_min = max(info.trade_stops_level, 5) * info.point
 
-        # Infer 1R distance from initial SL (or 1.5 * ATR14 fallback)
-        r_dist = abs(entry - cur_sl) if (cur_sl > 0 and ((is_buy and cur_sl < entry) or (not is_buy and cur_sl > entry))) else (atr14 * 1.5)
+        orders_hist = mt5.history_orders_get(position=p.ticket) or []
+        init_ord = next((o for o in orders_hist if o.sl > 0), None)
+        orig_sl = float(init_ord.sl) if init_ord else cur_sl
+        r_dist = abs(entry - orig_sl) if (orig_sl > 0 and ((is_buy and orig_sl < entry) or (not is_buy and orig_sl > entry))) else (atr14 * scfg["sl_atr_mult"])
         if r_dist <= 0:
-            r_dist = atr14 * 1.5
+            r_dist = atr14 * scfg["sl_atr_mult"]
 
         unrealized_dist = (spot - entry) if is_buy else (entry - spot)
         r_mult = unrealized_dist / r_dist
@@ -165,8 +207,8 @@ def manage_open_positions(sleeve: str, positions: list) -> dict[int, str]:
         new_sl = None
         mode_tag = None
 
-        if r_mult >= 1.5:
-            trail_dist = atr14 * 1.0
+        if r_mult >= scfg["trail_trigger_r"]:
+            trail_dist = atr14 * scfg["trail_atr_mult"]
             candidate_sl = round((spot - trail_dist) if is_buy else (spot + trail_dist), digits)
             if is_buy and candidate_sl > cur_sl + (2 * info.point) and (spot - candidate_sl) >= stops_min:
                 new_sl = candidate_sl
@@ -176,14 +218,14 @@ def manage_open_positions(sleeve: str, positions: list) -> dict[int, str]:
                 mode_tag = f"TRAIL@{r_mult:.1f}R"
             else:
                 badges[p.ticket] = f"TRAIL-HOLD({r_mult:.1f}R)"
-        elif r_mult >= 0.75:
-            be_lock = round((entry + r_dist * 0.10) if is_buy else (entry - r_dist * 0.10), digits)
+        elif r_mult >= scfg["be_trigger_r"]:
+            be_lock = round((entry + r_dist * scfg["be_lock_r"]) if is_buy else (entry - r_dist * scfg["be_lock_r"]), digits)
             if is_buy and cur_sl < be_lock - info.point and (spot - be_lock) >= stops_min:
                 new_sl = be_lock
-                mode_tag = "BE+0.10R"
+                mode_tag = f"BE+{scfg['be_lock_r']:.2f}R"
             elif (not is_buy) and (cur_sl == 0.0 or cur_sl > be_lock + info.point) and (be_lock - spot) >= stops_min:
                 new_sl = be_lock
-                mode_tag = "BE+0.10R"
+                mode_tag = f"BE+{scfg['be_lock_r']:.2f}R"
             else:
                 badges[p.ticket] = "BE-LOCKED"
 
@@ -372,16 +414,23 @@ def run_live_mc_dd(win_prob: float) -> float:
 
 
 def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped: bool, max_pos: int) -> tuple[str, bool]:
+    scfg = SILO_CONFIG[sleeve]
     if fleet_cb_tripped:
         return "CB-3%-HALT", False
     now_utc = datetime.now(timezone.utc)
     mins = now_utc.hour * 60 + now_utc.minute
     if (20 * 60 + 55) <= mins <= (22 * 60 + 10):
         return "ROLLOVER-HOLD", False
-    if ev["spr_atr"] > 0.18:
+    if now_utc.hour not in scfg["utc_hours"]:
+        return f"KZ-WAIT({now_utc.hour:02d}UTC)", False
+    if ev["spr_atr"] > scfg["max_spr_atr"]:
         return f"SPR-SHIELD({ev['spr_atr']:.2f})", False
     if ev["direction"] not in ("BUY", "SELL"):
         return "FLAT-HOLD", False
+    if float(ev["score"]) > scfg["max_score"]:
+        return f"CLIMAX-TRAP({int(ev['score'])}%>{int(scfg['max_score'])}%)", False
+    if ev.get("ict_tag", "NEUTRAL") not in scfg["allowed_ict"]:
+        return f"ICT-FILTER({ev.get('ict_tag', 'NEUTRAL')})", False
 
     sym = ev["raw_symbol"]
     existing_sym = mt5.positions_get(symbol=sym) or []
@@ -392,37 +441,36 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
     if len(all_sleeve_pos) >= max_pos:
         return f"CAP-MAX({len(all_sleeve_pos)}/{max_pos})", False
 
-    # Final Production Policy:
-    # A) 2-Strike Daily Kill-Switch per symbol (DAY-SL-LOCK) + 30-min post-SL Cooldown (SL-CD)
     from datetime import timedelta
     day_start_utc = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
     deals = mt5.history_deals_get(day_start_utc - timedelta(minutes=35), now_utc + timedelta(minutes=5)) or []
     daily_sym_losses = 0
+    daily_sleeve_losses = 0
     for d in reversed(deals):
-        if d.symbol == sym and d.entry == mt5.DEAL_ENTRY_OUT and float(d.profit) < 0.0:
+        if d.entry == mt5.DEAL_ENTRY_OUT and float(d.profit) < 0.0:
             if float(d.time) >= day_start_utc.timestamp():
-                daily_sym_losses += 1
-            mins_ago = (now_utc.timestamp() - float(d.time)) / 60.0
-            if 0.0 <= mins_ago < 30.0:
-                rem = max(1, int(math.ceil(30.0 - mins_ago)))
-                return f"SL-CD({rem}m)", False
+                daily_sleeve_losses += 1
+                if d.symbol == sym:
+                    daily_sym_losses += 1
+            if d.symbol == sym:
+                mins_ago = (now_utc.timestamp() - float(d.time)) / 60.0
+                if 0.0 <= mins_ago < 30.0:
+                    rem = max(1, int(math.ceil(30.0 - mins_ago)))
+                    return f"SL-CD({rem}m)", False
     if daily_sym_losses >= 2:
         return f"DAY-SL-LOCK({daily_sym_losses}/2)", False
+    if daily_sleeve_losses >= scfg["max_daily_sleeve_losses"]:
+        return f"SLV-SL-LOCK({daily_sleeve_losses}/{scfg['max_daily_sleeve_losses']})", False
 
-    # B) T2 USD-Basket Correlation Guard: block stacking 2 identical directional USD bets
     if sleeve == "T2" and all_sleeve_pos:
-        def _usd_bias(s_name: str, is_long: bool) -> int:
-            s_up = s_name.upper()
-            if s_up.startswith("USD"):
-                return 1 if is_long else -1
-            if "USD" in s_up:
-                return -1 if is_long else 1
-            return 0  # Non-USD cross (e.g., GBPJPY)
-        cand_bias = _usd_bias(sym, ev["direction"] == "BUY")
-        if cand_bias != 0:
-            for op in all_sleeve_pos:
-                if _usd_bias(op.symbol, op.type == 0) == cand_bias:
-                    return f"USD-CORR({op.symbol})", False
+        def _ccy_pair(s_name: str) -> set[str]:
+            clean = "".join(ch for ch in s_name.upper() if ch.isalpha())[:6]
+            return {clean[:3], clean[3:6]} if len(clean) == 6 else {clean}
+        cand_ccys = _ccy_pair(sym)
+        for op in all_sleeve_pos:
+            shared = cand_ccys.intersection(_ccy_pair(op.symbol))
+            if shared:
+                return f"CCY-MUTEX({'/'.join(sorted(shared))}:{op.symbol})", False
 
     info = mt5.symbol_info(sym)
     if info is None or ev["atr14"] <= 0:
@@ -432,19 +480,17 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
         mt5.ORDER_FILLING_FOK if (info.filling_mode & 1) else mt5.ORDER_FILLING_RETURN
     )
 
-    risk_usd = equity * 0.0068
-    sl_dist = ev["atr14"] * 1.5
+    risk_usd = min(equity * scfg["risk_pct"], scfg["max_risk_usd"])
+    sl_dist = ev["atr14"] * scfg["sl_atr_mult"]
     tick_val = info.trade_tick_value if info.trade_tick_value > 0 else 1.0
     tick_size = info.trade_tick_size if info.trade_tick_size > 0 else info.point
 
-    # C) T3 (XAUUSD) Strict $10.00 Min-Lot ATR Gate: reject over-volatile regimes instead of pinching SL
     if sleeve == "T3":
         min_lot_sl_usd = (sl_dist / max(1e-9, tick_size)) * info.volume_min * tick_val
-        if min_lot_sl_usd > 10.0:
-            return f"ATR-CAP(${min_lot_sl_usd:.1f}>$10)", False
-        risk_usd = min(risk_usd, 10.0)
+        if min_lot_sl_usd > scfg["max_risk_usd"]:
+            return f"ATR-CAP(${min_lot_sl_usd:.1f}>${int(scfg['max_risk_usd'])})", False
 
-    tp_dist = sl_dist * 1.85
+    tp_dist = sl_dist * scfg["tp_r_mult"]
     raw_lots = risk_usd / (max(1.0, sl_dist / tick_size) * tick_val)
     step = info.volume_step if info.volume_step > 0 else 0.01
     lots = round(max(info.volume_min, min(info.volume_max, math.floor(raw_lots / step) * step)), 2)
@@ -705,7 +751,7 @@ def run_dissolve_hud_cycle(force_brush_away: bool = False) -> None:
 
 
 if __name__ == "__main__":
-    log.info("Starting 🔱 SHIVSOUL NEXUS v5.6 Auto-Scan, Auto-Fire & BE/ATR-Trail HUD Engine...")
+    log.info("Starting 🔱 SHIVSOUL NEXUS v6.0 Auto-Scan, Auto-Fire & BE/ATR-Trail HUD Engine...")
     run_dissolve_hud_cycle(force_brush_away=True)
     while True:
         time.sleep(60)
