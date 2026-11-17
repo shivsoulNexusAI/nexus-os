@@ -239,13 +239,7 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
     atr14 = calc_atr14(r_m15)
     spread_price = max(0.0, float(tick.ask - tick.bid))
     spr_atr = (spread_price / atr14) if atr14 > 0 else 999.0
-    kf = compute_kalman_fair_value(
-        closes=np.asarray(r_m15["close"], dtype=float),
-        atr14=atr14,
-        sleeve=sleeve,
-        utc_hour=datetime.now(timezone.utc).hour,
-        spread_price=spread_price,
-    )
+
 
     # 1. Top-Down 4-Timeframe Alignment (D1, H4, H1, M15)
     d1_dir = 1 if r_d1["close"][-1] > ema(r_d1["close"], 20) else -1
@@ -306,6 +300,15 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
     else:
         ict_tag = "NEUTRAL"
 
+    kf = compute_kalman_fair_value(
+        closes=np.asarray(r_m15["close"], dtype=float),
+        atr14=atr14,
+        sleeve=sleeve,
+        utc_hour=datetime.now(timezone.utc).hour,
+        spread_price=spread_price,
+        tvpin=float(tvpin),
+    )
+
     # 5. Calibrated 4-TF + Institutional Flow + Cronus ML Composite Score
     efficiency = abs(float(r_m15["close"][-1] - r_m15["close"][-21])) / max(float(np.sum(np.abs(np.diff(r_m15["close"][-21:])))), 1e-9)
     aligned_dii = max(0.0, dir_sign * dii) if dir_sign != 0 else 0.0
@@ -317,12 +320,16 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
     ml_pts = cronus_ml * 18.0
 
     kf_pts = 0.0
-    if not kf["is_climax"]:
+    if not kf["is_climax"] and not kf["mm_taxed"]:
         if (dir_sign == 1 and kf["regime_bias"] == "BULL_IMPULSE") or (dir_sign == -1 and kf["regime_bias"] == "BEAR_IMPULSE"):
             kf_pts = 4.0
+        if kf["gm_state"] == "FRONT_RUN_FLOW":
+            kf_pts += 3.0
     score = min(98.0, max(15.0, tf_pts + delta_pts + ict_pts + ml_pts + kf_pts))
     if kf["is_climax"]:
         score *= 0.78
+    if kf["mm_taxed"]:
+        score *= 0.76
     if spr_atr > 0.18:
         score *= 0.72
 
