@@ -1,0 +1,18 @@
+{
+  "v6_3": {
+    "trades": 2701,
+    "win_rate": 20.7,
+    "profit_factor": 0.81,
+    "expectancy_r": -0.1197,
+    "net_r": -323.41,
+    "max_dd_r": 358.39
+  },
+  "v7_0": {
+    "trades": 2762,
+    "win_rate": 18.65,
+    "profit_factor": 0.81,
+    "expectancy_r": -0.1029,
+    "net_r": -284.23,
+    "max_dd_r": 315.77
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "simulations": 10000,
+  "trades_per_path": 360,
+  "mean_terminal_usd": 462.11,
+  "median_terminal_usd": 453.92,
+  "ci_5_pct": 375.29,
+  "ci_95_pct": 568.34,
+  "mean_max_dd_pct": 54.53,
+  "p95_max_dd_pct": 63.12,
+  "p99_max_dd_pct": 65.93,
+  "ruin_probability_pct": 77.57
+}

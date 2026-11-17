@@ -1,0 +1,14 @@
+{
+  "simulations": 10000,
+  "trades_per_path": 360,
+  "win_rate": 0.32,
+  "payoff_ratio": 3.5,
+  "mean_terminal_usd": 1965.93,
+  "median_terminal_usd": 1920.46,
+  "ci_5_pct": 1402.17,
+  "ci_95_pct": 2690.09,
+  "mean_max_dd_pct": 9.03,
+  "p95_max_dd_pct": 14.17,
+  "p99_max_dd_pct": 17.36,
+  "ruin_probability_pct": 0.0
+}
