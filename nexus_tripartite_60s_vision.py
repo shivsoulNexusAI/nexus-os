@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import telegram_config as tc
 from nexus_ship_core import SLEEVES, is_valid_live_tick, evaluate_weekly_circuit_breaker
-from kalman_regime_filter import compute_kalman_fair_value, compute_momentum_alpha
+from kalman_regime_filter import compute_kalman_fair_value, compute_momentum_alpha, compute_ou_mean_reversion
 
 PROJECT_DIR = Path("C:/Quant-Nexus-Eng")
 STATE_FILE = PROJECT_DIR / "tripartite_60s_state.json"
@@ -352,6 +352,12 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
         spread_price=spread_price,
         tvpin=float(tvpin),
     )
+    ou = compute_ou_mean_reversion(
+        closes=np.asarray(r_m15['close'], dtype=float),
+        fair_value=float(kf.get("fair_value", float(np.asarray(r_m15['close'], dtype=float)[-1]))),
+        atr14=atr14,
+        lookback=64,
+    )
 
     # 5. Calibrated 4-TF + Institutional Flow + Cronus ML Composite Score
     efficiency = abs(float(r_m15["close"][-1] - r_m15["close"][-21])) / max(float(np.sum(np.abs(np.diff(r_m15["close"][-21:])))), 1e-9)
@@ -378,15 +384,33 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
         score *= 0.72
 
 
-    # Institutional Momentum Delta Adjustments (TSMOM + Skip-Recent-Bars + Crash Veto)
-    if mom["mom_crash_veto"] and direction == mom["mom_dir"]:
-        score *= 0.65
+    # Institutional Momentum Delta Adjustments (TSMOM + Skip-Recent-Bars + Hard Crash Veto)
+    if mom["mom_crash_veto"]:
+        score = min(score * 0.65, float(SILO_CONFIG[sleeve]["gate"]) - 6.0)
     elif mom["is_chasing_spike"] and direction == mom["mom_dir"]:
-        score *= 0.82
+        score *= 0.80
     elif mom["is_pullback_entry"] and direction == mom["mom_dir"]:
-        score = min(99.0, score + 4.5)
-    elif mom["mom_dir"] in ("BUY", "SELL") and direction != mom["mom_dir"] and abs(mom["tsmom_z"]) >= 0.75:
-        score *= 0.86
+        score = min(99.0, score + 5.0)
+    elif mom["mom_dir"] in ("BUY", "SELL") and direction != mom["mom_dir"] and abs(mom["tsmom_z"]) >= 0.65:
+        score *= 0.84
+
+
+    # Ornstein-Uhlenbeck (OU) Mean Reversion & ADF Stationarity Adjustments
+    if ou["is_valid_ou"] and direction == ou["ou_dir"]:
+        if ou["ou_state"] == "PRIME_OU_SNAPBACK":
+            score = min(99.0, score + 4.5)
+        elif ou["ou_state"] == "OU_STRETCHED":
+            score = min(99.0, score + 2.5)
+    elif ou["is_valid_ou"] and direction in ("BUY", "SELL") and ou["ou_dir"] in ("BUY", "SELL") and direction != ou["ou_dir"]:
+        # Damp chasing further into an extreme stretch when fast OU mean-reversion pull is active
+        score *= 0.85
+    elif not ou["is_valid_ou"] and ict_tag == "VAL-RECLAIM":
+        # Damp standalone mean-reversion fades when ADF t-stat fails stationarity (random-walk / breakout drift)
+        score *= 0.88
+
+    # Dual-Regime Ambiguity Gate: damp entries when BOTH TSMOM is NOISE_DRIFT and OU is RANDOM_WALK_DRIFT
+    if mom["mom_state"] == "NOISE_DRIFT" and not ou["is_valid_ou"] and direction in ("BUY", "SELL"):
+        score *= 0.84
 
     return {
         "valid": True,
@@ -424,6 +448,11 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
         "path_r2": mom["path_r2"],
         "last2_atr": mom["last2_atr"],
         "mom_state": mom["mom_state"],
+        "ou_half_life": ou["ou_half_life"],
+        "adf_tstat": ou["adf_tstat"],
+        "ou_z": ou["ou_z"],
+        "ou_dir": ou["ou_dir"],
+        "ou_state": ou["ou_state"],
     }
 
 

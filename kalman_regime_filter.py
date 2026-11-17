@@ -230,8 +230,8 @@ MOMENTUM_TERMINAL_PARAMS: dict[str, dict[str, float]] = {
         "crash_rebound_atr": 1.60,# Counter-move threshold flagging a momentum-crash snapback
     },
     "T2": {
-        "min_tsmom_z": 0.55,
-        "min_r2": 0.35,
+        "min_tsmom_z": 0.42,
+        "min_r2": 0.28,
         "max_last2_atr": 1.10,
         "crash_rebound_atr": 1.35,
     },
@@ -343,4 +343,102 @@ def compute_momentum_alpha(
         "is_chasing_spike": is_chasing_spike,
         "mom_crash_veto": mom_crash_veto,
         "mom_state": mom_state,
+    }
+
+
+def compute_ou_mean_reversion(
+    closes: np.ndarray,
+    fair_value: float,
+    atr14: float,
+    lookback: int = 64,
+) -> dict[str, float | bool | str]:
+    """
+    Fits a discrete Ornstein-Uhlenbeck (AR1 / ADF) regression on residuals around fair value:
+        dX_t = a + b * X_{t-1} + eps_t
+    Returns:
+      - ou_half_life : expected M15 bars to revert halfway to equilibrium (-ln(2) / ln(1 + b))
+      - adf_tstat    : OLS t-statistic on slope b (requires <= -2.85 to reject random walk)
+      - ou_z         : equilibrium-normalized Z-score of current deviation
+      - ou_dir       : "BUY" if oversold below equilibrium, "SELL" if overbought above, else "FLAT"
+      - ou_state     : "PRIME_OU_SNAPBACK", "OU_STRETCHED", "SLOW_OU", or "RANDOM_WALK_DRIFT"
+    """
+    n = len(closes)
+    if n < max(lookback, 30) or atr14 <= 0.0:
+        return {
+            "ou_half_life": 999.0,
+            "adf_tstat": 0.0,
+            "ou_z": 0.0,
+            "ou_dir": "FLAT",
+            "is_valid_ou": False,
+            "ou_state": "NO_DATA",
+        }
+
+    # Use rolling linear detrended residual over lookback window so dynamic equilibrium drift is captured
+    seg = closes[-lookback:].astype(float)
+    t_idx = np.arange(lookback, dtype=float)
+    slope_t, intercept_t = np.polyfit(t_idx, seg, 1)
+    eq_line = intercept_t + slope_t * t_idx
+    x = seg - eq_line
+
+    x_lag = x[:-1]
+    dx = np.diff(x)
+    m = len(x_lag)
+
+    # OLS regression: dx = a + b * x_lag
+    x_mean = float(np.mean(x_lag))
+    dx_mean = float(np.mean(dx))
+    s_xx = float(np.sum((x_lag - x_mean) ** 2))
+    if s_xx <= 1e-18:
+        return {
+            "ou_half_life": 999.0,
+            "adf_tstat": 0.0,
+            "ou_z": 0.0,
+            "ou_dir": "FLAT",
+            "is_valid_ou": False,
+            "ou_state": "NO_DATA",
+        }
+
+    b = float(np.sum((x_lag - x_mean) * (dx - dx_mean)) / s_xx)
+    a = dx_mean - b * x_mean
+    resid = dx - (a + b * x_lag)
+    dof = max(m - 2, 1)
+    s2 = float(np.sum(resid ** 2)) / dof
+    se_b = float(np.sqrt(max(s2 / s_xx, 1e-18)))
+    adf_tstat = b / se_b
+
+    # Half-life in M15 bars (valid only when -1.0 < b < 0.0)
+    if -0.99 < b < -0.005:
+        ou_half_life = float(-np.log(2.0) / np.log(1.0 + b))
+    else:
+        ou_half_life = 999.0
+
+    eq_std = max(float(np.std(x, ddof=1)), atr14 * 0.25)
+    ou_z = float(x[-1] / eq_std)
+
+    # Strict validation: rejects random walk (adf_tstat <= -2.85) and ensures tradeable half-life (2.5 to 18 M15 bars)
+    is_valid_ou = (adf_tstat <= -2.85) and (2.5 <= ou_half_life <= 18.0)
+
+    if ou_z <= -1.35:
+        ou_dir = "BUY"
+    elif ou_z >= 1.35:
+        ou_dir = "SELL"
+    else:
+        ou_dir = "FLAT"
+
+    if is_valid_ou and abs(ou_z) >= 1.65:
+        ou_state = "PRIME_OU_SNAPBACK"
+    elif is_valid_ou and abs(ou_z) >= 1.25:
+        ou_state = "OU_STRETCHED"
+    elif adf_tstat <= -2.85:
+        ou_state = "SLOW_OU"
+    else:
+        ou_state = "RANDOM_WALK_DRIFT"
+
+    return {
+        "ou_half_life": round(ou_half_life, 1),
+        "adf_tstat": round(adf_tstat, 2),
+        "ou_z": round(ou_z, 2),
+        "ou_dir": ou_dir,
+        "is_valid_ou": is_valid_ou,
+        "ou_state": ou_state,
     }
