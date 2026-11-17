@@ -1,9 +1,9 @@
 """
-kalman_regime_filter.py — Terminal-Isolated 1D Kalman Fair-Value + Glosten-Milgrom + Avellaneda-Stoikov Engine
-Calibrated separately for:
-  - T1 (BTCUSD): Crypto wick damping + spread-widening defense + 24/7 inventory skew
-  - T2 (FX Majors/Crosses): NY Killzone impulse tracking + quote-shading filter + FX dealer reservation skew
-  - T3 (XAUUSD): Bullion liquidity-regime adaptation + spread-tax guard + COMEX inventory skew
+kalman_regime_filter.py — Terminal-Isolated 4-Model Market Microstructure Engine:
+  1. 1D Scalar Kalman Filter (Fair Value & Innovation Z-Score)
+  2. Glosten-Milgrom (1985) Adverse-Selection Toxicity Efficiency (tVPIN / SprATR)
+  3. Avellaneda-Stoikov (2008) Reservation-Price Skew & Dealer Inventory Pressure
+  4. Dealer Gamma-Regime Variance Ratio (Long-Gamma Strike Pinning vs. Short-Gamma Cascade)
 """
 from __future__ import annotations
 import numpy as np
@@ -21,6 +21,8 @@ KALMAN_TERMINAL_PARAMS: dict[str, dict[str, float]] = {
         "as_gamma": 0.45,       # Avellaneda-Stoikov dealer risk aversion (gamma)
         "as_tau": 1.00,         # Normalized remaining inventory horizon (tau)
         "max_as_skew_atr": 0.55,# Max reservation-price skew in ATR units before dealer inventory flush
+        "pin_vr": 0.62,         # Variance ratio below which dealers are long-gamma pinning price
+        "cascade_vr": 1.55,     # Variance ratio above which dealers are short-gamma delta-hedging
     },
     "T2": {
         "q_base": 0.065,        # Responsive fair-value drift during institutional FX killzones
@@ -34,6 +36,8 @@ KALMAN_TERMINAL_PARAMS: dict[str, dict[str, float]] = {
         "as_gamma": 0.65,
         "as_tau": 0.85,
         "max_as_skew_atr": 0.42,
+        "pin_vr": 0.68,
+        "cascade_vr": 1.45,
     },
     "T3": {
         "q_base": 0.055,        # Balanced bullion trend drift
@@ -47,6 +51,8 @@ KALMAN_TERMINAL_PARAMS: dict[str, dict[str, float]] = {
         "as_gamma": 0.55,
         "as_tau": 0.90,
         "max_as_skew_atr": 0.48,
+        "pin_vr": 0.65,
+        "cascade_vr": 1.50,
     },
 }
 
@@ -60,12 +66,14 @@ def compute_kalman_fair_value(
     tvpin: float = 0.55,
 ) -> dict[str, float | bool | str]:
     """
-    Runs a 1D scalar Kalman filter over close prices, evaluates Glosten-Milgrom
-    Adverse-Selection Toxicity Ratio (tVPIN / SprATR), and computes the
-    Avellaneda-Stoikov reservation-price skew (r = s - q * gamma * sigma^2 * tau).
+    Evaluates:
+      - 1D scalar Kalman fair value & Innovation Z-score
+      - Glosten-Milgrom (1985) Adverse-Selection Toxicity Ratio (tVPIN / SprATR)
+      - Avellaneda-Stoikov (2008) Reservation-Price Skew (r = s - q * gamma * sigma^2 * tau)
+      - Dealer Gamma-Regime Variance Ratio (short-window vs. long-window realized variance)
     """
     n = len(closes)
-    if n < 5 or atr14 <= 0.0:
+    if n < 12 or atr14 <= 0.0:
         last_px = float(closes[-1]) if n > 0 else 0.0
         return {
             "fair_value": last_px,
@@ -83,13 +91,37 @@ def compute_kalman_fair_value(
             "as_half_spr_atr": 0.0,
             "as_state": "NO_DATA",
             "inv_flush_risk": False,
+            "gamma_vr": 1.0,
+            "gamma_regime": "GAMMA_NEUTRAL",
+            "is_gamma_pinned": False,
         }
 
     cfg = KALMAN_TERMINAL_PARAMS.get(sleeve, KALMAN_TERMINAL_PARAMS["T2"])
     in_ny_window = (13 <= utc_hour <= 20) if sleeve == "T1" else (13 <= utc_hour <= 17)
 
+    # 4. Pre-compute Gamma-Regime Variance Ratio (last 8 bars vs. full baseline window)
+    all_diffs = np.diff(closes)
+    short_diffs = all_diffs[-8:]
+    var_long = float(np.var(all_diffs, ddof=1)) if len(all_diffs) > 2 else (atr14 * 0.35) ** 2
+    var_short = float(np.var(short_diffs, ddof=1)) if len(short_diffs) > 2 else var_long
+    gamma_vr = var_short / max(var_long, 1e-18)
+
+    is_gamma_pinned = gamma_vr <= cfg["pin_vr"]
+    if is_gamma_pinned:
+        gamma_regime = "LONG_GAMMA_PIN"
+    elif gamma_vr >= cfg["cascade_vr"]:
+        gamma_regime = "SHORT_GAMMA_CASCADE"
+    else:
+        gamma_regime = "GAMMA_NEUTRAL"
+
+    # Adapt Kalman Q/R by session liquidity and dealer gamma regime
     q_mult = cfg["q_base"] * (cfg["ny_q_boost"] if in_ny_window else 0.75)
     r_mult = cfg["r_base"] * (1.0 if in_ny_window else cfg["off_r_boost"])
+    if is_gamma_pinned:
+        q_mult *= 0.70   # Damp fair-value drift when dealers are pinning strike
+        r_mult *= 1.35
+    elif gamma_regime == "SHORT_GAMMA_CASCADE":
+        q_mult *= 1.30   # Accelerate fair-value tracking during forced delta-hedging
 
     spr_ratio = spread_price / max(atr14, 1e-9)
     if spr_ratio > 0.08:
@@ -144,22 +176,18 @@ def compute_kalman_fair_value(
     else:
         gm_state = "INFORMED_WINDOW"
 
-    # Avellaneda-Stoikov (2008) Reservation-Price Skew & Quote Pressure:
-    # When crowd buys aggressively, dealers accumulate short inventory (q_dealer < 0),
-    # raising reservation price r = s - q_dealer * gamma * sigma^2 * tau.
-    diffs = np.diff(closes[-min(n, 20):])
-    sigma_px = float(np.std(diffs)) if len(diffs) > 1 else atr14 * 0.35
+    # Avellaneda-Stoikov (2008) Reservation-Price Skew & Quote Pressure
+    recent_diffs = all_diffs[-min(len(all_diffs), 20):]
+    sigma_px = float(np.std(recent_diffs)) if len(recent_diffs) > 1 else atr14 * 0.35
     sigma_atr_sq = (sigma_px / max(atr14, 1e-9)) ** 2
 
-    # Exponentially weighted signed order-wave imbalance proxying dealer inventory pileup
-    weights = np.exp(np.linspace(-1.5, 0.0, len(diffs)))
-    norm_moves = np.clip(diffs / max(atr14, 1e-9), -2.5, 2.5)
+    weights = np.exp(np.linspace(-1.5, 0.0, len(recent_diffs)))
+    norm_moves = np.clip(recent_diffs / max(atr14, 1e-9), -2.5, 2.5)
     crowd_wave = float(np.sum(weights * norm_moves) / max(np.sum(weights), 1e-9))
     q_dealer = -crowd_wave * (0.6 + 0.8 * float(tvpin))
 
     gamma = cfg["as_gamma"]
     tau = cfg["as_tau"]
-    # Skew in ATR units: -q_dealer * gamma * sigma_atr^2 * tau * scale_factor
     as_skew_atr = -q_dealer * gamma * sigma_atr_sq * tau * 4.0
     as_res_px = float(closes[-1]) + (as_skew_atr * atr14)
     as_half_spr_atr = 0.5 * gamma * sigma_atr_sq * tau * 2.5
@@ -188,4 +216,7 @@ def compute_kalman_fair_value(
         "as_half_spr_atr": round(as_half_spr_atr, 3),
         "as_state": as_state,
         "inv_flush_risk": inv_flush_risk,
+        "gamma_vr": round(gamma_vr, 3),
+        "gamma_regime": gamma_regime,
+        "is_gamma_pinned": is_gamma_pinned,
     }
