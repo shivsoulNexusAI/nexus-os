@@ -516,6 +516,62 @@ def _record_execution_slippage(
         return 0.0
 
 
+def _append_entry_slippage_ledger(sleeve: str, ev: dict, pre_tick, send_res) -> None:
+    """Persists pre-order Bid/Ask quote vs. realized MT5 fill price into execution_slippage_ledger.jsonl."""
+    try:
+        if send_res is None:
+            return
+        retcode = int(getattr(send_res, "retcode", -1))
+        if retcode not in (getattr(mt5, "TRADE_RETCODE_DONE", 10009), getattr(mt5, "TRADE_RETCODE_PLACED", 10008)):
+            return
+
+        sym = str((ev or {}).get("raw_symbol") or (ev or {}).get("symbol") or "")
+        side = str((ev or {}).get("direction") or "").upper()
+        req_bid = float(getattr(pre_tick, "bid", 0.0) or 0.0)
+        req_ask = float(getattr(pre_tick, "ask", 0.0) or 0.0)
+        req_price = req_ask if side == "BUY" else (req_bid if side == "SELL" else 0.0)
+        fill_price = float(getattr(send_res, "price", 0.0) or 0.0)
+        vol = float(getattr(send_res, "volume", 0.0) or 0.0)
+
+        info = mt5.symbol_info(sym) if sym else None
+        point = float(getattr(info, "point", 0.0) or 0.0)
+        tick_sz = float(getattr(info, "trade_tick_size", 0.0) or point)
+        tick_val = float(getattr(info, "trade_tick_value", 0.0) or 0.0)
+
+        slip_pts = 0.0
+        slip_usd = 0.0
+        if req_price > 0.0 and fill_price > 0.0 and point > 0.0:
+            raw_diff = (req_price - fill_price) if side == "BUY" else (fill_price - req_price)
+            slip_pts = round(raw_diff / point, 2)
+            if tick_sz > 0.0 and tick_val > 0.0 and vol > 0.0:
+                slip_usd = round(slip_pts * tick_val * (point / tick_sz) * vol, 4)
+
+        record = {
+            "ts_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "sleeve": str(sleeve),
+            "symbol": sym,
+            "side": side,
+            "volume": vol,
+            "order": int(getattr(send_res, "order", 0) or 0),
+            "deal": int(getattr(send_res, "deal", 0) or 0),
+            "ticket": int(getattr(send_res, "order", 0) or 0),
+            "req_bid": req_bid,
+            "req_ask": req_ask,
+            "req_price": req_price,
+            "fill_price": fill_price,
+            "slip_pts": slip_pts,
+            "slip_usd": slip_usd,
+            "score": (ev or {}).get("score"),
+            "tsmom_z": (ev or {}).get("tsmom_z"),
+            "ou_state": (ev or {}).get("ou_state"),
+        }
+        ledger_file = Path(__file__).resolve().parent / "execution_slippage_ledger.jsonl"
+        with ledger_file.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped: bool, max_pos: int) -> tuple[str, bool]:
     scfg = SILO_CONFIG[sleeve]
     if fleet_cb_tripped:
@@ -603,6 +659,8 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
     sl = round(price - sl_dist if is_buy else price + sl_dist, info.digits)
     tp = round(price + tp_dist if is_buy else price - tp_dist, info.digits)
 
+    _sym_for_tick = (ev.get("raw_symbol") or ev.get("symbol", "")) if isinstance(ev, dict) else ""
+    _pre_tick = mt5.symbol_info_tick(_sym_for_tick) if _sym_for_tick else None
     res = mt5.order_send({
         "action": mt5.TRADE_ACTION_DEAL,
         "symbol": sym,
@@ -617,6 +675,12 @@ def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped:
         "type_time": mt5.ORDER_TIME_GTC,
         "type_filling": fill_mode,
     })
+    _append_entry_slippage_ledger(
+        sleeve=sleeve,
+        ev=ev,
+        pre_tick=_pre_tick,
+        send_res=res,
+    )
     if res is not None and res.retcode == mt5.TRADE_RETCODE_DONE:
         log.info(f"[{sleeve}] AUTO-EXEC FILLED: {ev['direction']} {sym} {lots}L @ {price} | SL={sl} TP={tp} | Ticket=#{res.order}")
         return f"EXEC#{res.order}", True
