@@ -45,3 +45,6 @@ vision_stderr.log
 *.bak*
 tripartite_60s_state.json
 execution_slippage_ledger.jsonl
+nexus_ledger.db*
+supervisor_stdout.log
+supervisor_stderr.log
