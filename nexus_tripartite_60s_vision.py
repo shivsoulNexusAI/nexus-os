@@ -15,6 +15,7 @@ from kalman_regime_filter import compute_kalman_fair_value
 PROJECT_DIR = Path("C:/Quant-Nexus-Eng")
 STATE_FILE = PROJECT_DIR / "tripartite_60s_state.json"
 LOG_FILE = PROJECT_DIR / "nexus_tripartite_60s_vision.log"
+SLIPPAGE_LEDGER = PROJECT_DIR / "execution_slippage_ledger.jsonl"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -411,6 +412,57 @@ def run_live_mc_dd(win_prob: float) -> float:
     equity = np.cumprod(1.0 + outcomes, axis=1)
     peaks = np.maximum.accumulate(equity, axis=1)
     return round(float(np.percentile(np.max((peaks - equity) / peaks, axis=1) * 100.0, 95)), 2)
+
+
+def _record_execution_slippage(
+    sleeve: str,
+    sym: str,
+    ticket: int,
+    direction: str,
+    lots: float,
+    req_px: float,
+    fill_px: float,
+    info,
+    ev: dict,
+    utc_dt: datetime,
+) -> float:
+    """Appends structured execution slippage & microstructure telemetry to execution_slippage_ledger.jsonl."""
+    try:
+        pt = float(info.point) if (info and info.point > 0) else 1e-5
+        tick_sz = float(info.trade_tick_size) if (info and info.trade_tick_size > 0) else pt
+        tick_val = float(info.trade_tick_value) if (info and info.trade_tick_value > 0) else 1.0
+        actual_px = float(fill_px) if (fill_px and float(fill_px) > 0.0) else float(req_px)
+        raw_diff = (actual_px - float(req_px)) if direction == "BUY" else (float(req_px) - actual_px)
+        slip_pts = round(raw_diff / pt, 2)
+        slip_usd = round((raw_diff / tick_sz) * float(lots) * tick_val, 4)
+
+        record = {
+            "ts_utc": utc_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "utc_hour": utc_dt.hour,
+            "sleeve": sleeve,
+            "symbol": sym,
+            "ticket": int(ticket),
+            "direction": direction,
+            "lots": round(float(lots), 2),
+            "req_price": round(float(req_px), int(info.digits) if info else 5),
+            "fill_price": round(actual_px, int(info.digits) if info else 5),
+            "slip_pts": slip_pts,
+            "slip_usd": slip_usd,
+            "spr_atr": round(float(ev.get("spr_atr", 0.0)), 4),
+            "score": int(ev.get("score", 0)),
+            "ict_tag": ev.get("ict_tag", "NEUTRAL"),
+            "kf_z": float(ev.get("kf_z", 0.0)),
+            "tox_eff": float(ev.get("tox_eff", 0.0)),
+            "gm_state": ev.get("gm_state", "N/A"),
+            "as_skew_atr": float(ev.get("as_skew_atr", 0.0)),
+            "as_state": ev.get("as_state", "N/A"),
+        }
+        with SLIPPAGE_LEDGER.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(record) + "\n")
+        return slip_pts
+    except Exception as exc:
+        log.warning(f"[{sleeve}] Slippage ledger write failed for #{ticket}: {exc}")
+        return 0.0
 
 
 def execute_auto_trigger(sleeve: str, ev: dict, equity: float, fleet_cb_tripped: bool, max_pos: int) -> tuple[str, bool]:

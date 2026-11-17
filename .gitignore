@@ -1,4 +1,4 @@
-﻿*.db
+*.db
 *.csv
 *.png
 *.log
@@ -39,3 +39,6 @@ prometheus_data/
 
 *credentials*.json
 google_credentials.json
+archive_backups/
+*.jsonl
+vision_stderr.log
