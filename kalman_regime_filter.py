@@ -220,3 +220,127 @@ def compute_kalman_fair_value(
         "gamma_regime": gamma_regime,
         "is_gamma_pinned": is_gamma_pinned,
     }
+
+
+MOMENTUM_TERMINAL_PARAMS: dict[str, dict[str, float]] = {
+    "T1": {
+        "min_tsmom_z": 0.65,      # Minimum vol-scaled multi-horizon drift (in ATR units)
+        "min_r2": 0.32,           # Minimum trend path linearity (R^2) to filter chop
+        "max_last2_atr": 1.35,    # Skip-last-2-bars ceiling: blocks chasing >1.35 ATR spike bars
+        "crash_rebound_atr": 1.60,# Counter-move threshold flagging a momentum-crash snapback
+    },
+    "T2": {
+        "min_tsmom_z": 0.55,
+        "min_r2": 0.35,
+        "max_last2_atr": 1.10,
+        "crash_rebound_atr": 1.35,
+    },
+    "T3": {
+        "min_tsmom_z": 0.60,
+        "min_r2": 0.34,
+        "max_last2_atr": 1.25,
+        "crash_rebound_atr": 1.50,
+    },
+}
+
+
+def compute_momentum_alpha(
+    closes: np.ndarray,
+    atr14: float,
+    sleeve: str,
+) -> dict[str, float | bool | str]:
+    """
+    Implements institutional Time-Series Momentum (TSMOM) with:
+      1. Volatility-scaled multi-horizon drift (4-bar, 16-bar, 32-bar M15 returns / ATR14)
+      2. Path smoothness (R^2 of linear fit over t-32..t-2)
+      3. '12-1' Intraday Skip-Recent-Bars filter (separating structural wave t-32..t-2 from t-2..t)
+      4. Momentum-Crash Rebound detector (flags violent counter-trend squeezes)
+    """
+    n = len(closes)
+    if n < 36 or atr14 <= 0.0:
+        return {
+            "tsmom_z": 0.0,
+            "mom_dir": "FLAT",
+            "path_r2": 0.0,
+            "skip_wave_atr": 0.0,
+            "last2_atr": 0.0,
+            "is_pullback_entry": False,
+            "is_chasing_spike": False,
+            "mom_crash_veto": False,
+            "mom_state": "NO_DATA",
+        }
+
+    cfg = MOMENTUM_TERMINAL_PARAMS.get(sleeve, MOMENTUM_TERMINAL_PARAMS["T2"])
+
+    # 1. Skip-recent-2-bars decomposition: structural wave (t-34 -> t-2) vs. immediate bar impulse (t-2 -> t)
+    px_now = float(closes[-1])
+    px_skip = float(closes[-3])
+    px_34 = float(closes[-35])
+    px_18 = float(closes[-19])
+    px_6 = float(closes[-7])
+
+    skip_wave_atr = (px_skip - px_34) / atr14
+    last2_atr = (px_now - px_skip) / atr14
+
+    # Volatility-scaled returns across 3 horizons (4-bar, 16-bar, 32-bar) normalized by sqrt(horizon)
+    r4_z = ((px_skip - px_6) / atr14) / 2.0
+    r16_z = ((px_skip - px_18) / atr14) / 4.0
+    r32_z = skip_wave_atr / 5.657
+    tsmom_z = 0.25 * r4_z + 0.40 * r16_z + 0.35 * r32_z
+
+    # 2. Path linearity (R^2) over structural wave (t-34 .. t-2)
+    seg = closes[-35:-2].astype(float)
+    x_idx = np.arange(len(seg), dtype=float)
+    x_mean = float(np.mean(x_idx))
+    y_mean = float(np.mean(seg))
+    ss_xx = float(np.sum((x_idx - x_mean) ** 2))
+    ss_yy = float(np.sum((seg - y_mean) ** 2))
+    ss_xy = float(np.sum((x_idx - x_mean) * (seg - y_mean)))
+    path_r2 = (ss_xy * ss_xy) / max(ss_xx * ss_yy, 1e-18)
+
+    mom_dir = "BUY" if tsmom_z > 0.15 else ("SELL" if tsmom_z < -0.15 else "FLAT")
+
+    # 3. Skip-recent-bars entry quality:
+    # Ideal: structural wave >= min_tsmom_z with clean R^2, while last 2 bars consolidate or pull back slightly
+    is_chasing_spike = (
+        (mom_dir == "BUY" and last2_atr > cfg["max_last2_atr"])
+        or (mom_dir == "SELL" and last2_atr < -cfg["max_last2_atr"])
+    )
+    is_pullback_entry = (
+        abs(tsmom_z) >= cfg["min_tsmom_z"]
+        and path_r2 >= cfg["min_r2"]
+        and not is_chasing_spike
+        and (
+            (mom_dir == "BUY" and -0.85 <= last2_atr <= 0.45)
+            or (mom_dir == "SELL" and -0.45 <= last2_atr <= 0.85)
+        )
+    )
+
+    # 4. Momentum-Crash Rebound Veto: structural trend is stretched, but last 2 bars violently reverse
+    mom_crash_veto = (
+        (mom_dir == "BUY" and last2_atr <= -cfg["crash_rebound_atr"])
+        or (mom_dir == "SELL" and last2_atr >= cfg["crash_rebound_atr"])
+    )
+
+    if mom_crash_veto:
+        mom_state = "MOM_CRASH_VETO"
+    elif is_chasing_spike:
+        mom_state = "SKIP_BAR_SPIKE"
+    elif is_pullback_entry:
+        mom_state = "PRIME_TSMOM_PULLBACK"
+    elif abs(tsmom_z) >= cfg["min_tsmom_z"] and path_r2 >= cfg["min_r2"]:
+        mom_state = "TREND_ACTIVE"
+    else:
+        mom_state = "NOISE_DRIFT"
+
+    return {
+        "tsmom_z": round(tsmom_z, 3),
+        "mom_dir": mom_dir,
+        "path_r2": round(path_r2, 3),
+        "skip_wave_atr": round(skip_wave_atr, 3),
+        "last2_atr": round(last2_atr, 3),
+        "is_pullback_entry": is_pullback_entry,
+        "is_chasing_spike": is_chasing_spike,
+        "mom_crash_veto": mom_crash_veto,
+        "mom_state": mom_state,
+    }

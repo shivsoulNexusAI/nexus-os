@@ -10,7 +10,7 @@ from datetime import datetime, timezone
 
 import telegram_config as tc
 from nexus_ship_core import SLEEVES, is_valid_live_tick, evaluate_weekly_circuit_breaker
-from kalman_regime_filter import compute_kalman_fair_value
+from kalman_regime_filter import compute_kalman_fair_value, compute_momentum_alpha
 
 PROJECT_DIR = Path("C:/Quant-Nexus-Eng")
 STATE_FILE = PROJECT_DIR / "tripartite_60s_state.json"
@@ -343,6 +343,7 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
     else:
         ict_tag = "NEUTRAL"
 
+    mom = compute_momentum_alpha(closes=np.asarray(r_m15['close'], dtype=float), atr14=atr14, sleeve=sleeve)
     kf = compute_kalman_fair_value(
         closes=np.asarray(r_m15["close"], dtype=float),
         atr14=atr14,
@@ -376,6 +377,17 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
     if spr_atr > 0.18:
         score *= 0.72
 
+
+    # Institutional Momentum Delta Adjustments (TSMOM + Skip-Recent-Bars + Crash Veto)
+    if mom["mom_crash_veto"] and direction == mom["mom_dir"]:
+        score *= 0.65
+    elif mom["is_chasing_spike"] and direction == mom["mom_dir"]:
+        score *= 0.82
+    elif mom["is_pullback_entry"] and direction == mom["mom_dir"]:
+        score = min(99.0, score + 4.5)
+    elif mom["mom_dir"] in ("BUY", "SELL") and direction != mom["mom_dir"] and abs(mom["tsmom_z"]) >= 0.75:
+        score *= 0.86
+
     return {
         "valid": True,
         "sleeve": sleeve,
@@ -408,6 +420,10 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
         "as_state": kf.get("as_state", "N/A"),
         "gamma_vr": kf.get("gamma_vr", 1.0),
         "gamma_regime": kf.get("gamma_regime", "N/A"),
+        "tsmom_z": mom["tsmom_z"],
+        "path_r2": mom["path_r2"],
+        "last2_atr": mom["last2_atr"],
+        "mom_state": mom["mom_state"],
     }
 
 
