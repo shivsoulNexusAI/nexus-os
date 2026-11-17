@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 
 import telegram_config as tc
 from nexus_ship_core import SLEEVES, is_valid_live_tick, evaluate_weekly_circuit_breaker
+from kalman_regime_filter import compute_kalman_fair_value
 
 PROJECT_DIR = Path("C:/Quant-Nexus-Eng")
 STATE_FILE = PROJECT_DIR / "tripartite_60s_state.json"
@@ -238,6 +239,13 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
     atr14 = calc_atr14(r_m15)
     spread_price = max(0.0, float(tick.ask - tick.bid))
     spr_atr = (spread_price / atr14) if atr14 > 0 else 999.0
+    kf = compute_kalman_fair_value(
+        closes=np.asarray(r_m15["close"], dtype=float),
+        atr14=atr14,
+        sleeve=sleeve,
+        utc_hour=datetime.now(timezone.utc).hour,
+        spread_price=spread_price,
+    )
 
     # 1. Top-Down 4-Timeframe Alignment (D1, H4, H1, M15)
     d1_dir = 1 if r_d1["close"][-1] > ema(r_d1["close"], 20) else -1
@@ -308,7 +316,13 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
     ict_pts = 20.0 if ict_tag == "OB+IFVG" else (16.0 if ict_tag == "VAL-RECLAIM" else (13.0 if ict_tag == "EMA-FLOW" else 4.0))
     ml_pts = cronus_ml * 18.0
 
-    score = min(98.0, max(15.0, tf_pts + delta_pts + ict_pts + ml_pts))
+    kf_pts = 0.0
+    if not kf["is_climax"]:
+        if (dir_sign == 1 and kf["regime_bias"] == "BULL_IMPULSE") or (dir_sign == -1 and kf["regime_bias"] == "BEAR_IMPULSE"):
+            kf_pts = 4.0
+    score = min(98.0, max(15.0, tf_pts + delta_pts + ict_pts + ml_pts + kf_pts))
+    if kf["is_climax"]:
+        score *= 0.78
     if spr_atr > 0.18:
         score *= 0.72
 
@@ -334,6 +348,10 @@ def analyze_asset(sym: str, sleeve: str, tf_label: str) -> dict:
         "ict_tag": ict_tag,
         "cronus_ml": round(cronus_ml * 100.0, 0),
         "score": round(score, 0),
+        "kf_fv": kf["fair_value"],
+        "kf_gain": kf["gain"],
+        "kf_z": kf["z_score"],
+        "kf_bias": kf["regime_bias"],
     }
 
 
