@@ -1,4 +1,5 @@
-﻿# -*- coding: utf-8 -*-
+from macro_news_gate import check_usd_macro_blackout
+# -*- coding: utf-8 -*-
 """
 SHIVSOUL NEXUS v10.2 // ADAPTIVE M5 HYBRID SCALPER + REAL-TIME TELEGRAM TELEMETRY
 - T1 (#278062038): BTCUSD M5 Market Impulse & Liquidity Sweep Scalper
@@ -188,6 +189,234 @@ def purge_nexus_pending_orders(sleeve_key: str, reason: str = "OCO_CLEANUP"):
             if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                 logging.info(f"[{sleeve_key}] Cancelled pending #{o.ticket} ({o.symbol}) -> {reason}")
 
+# === QUANT-NEXUS v11.0 INSTITUTIONAL CORE START ===
+import math
+from datetime import timedelta
+
+V11_RISK_BUDGET_USD = {
+    "T1": 4.50,  # $4.50 fixed risk per trade (BTCUSD / US30)
+    "T2": 3.00,  # $3.00 fixed risk per trade (GBPUSD Sweep-Reclaim)
+    "T3": 4.50,  # $4.50 fixed risk per trade (XAUUSD Hybrid)
+}
+V11_MAX_LOT_CAP = {
+    "T1": 0.03,
+    "T2": 0.05,
+    "T3": 0.03,
+}
+
+def compute_volatility_parity_lot(sleeve_key: str, symbol: str, entry: float, sl: float, sym_info) -> tuple[float, float]:
+    """
+    Sizes lot inversely to stop distance so every trade risks an identical dollar budget.
+    Returns (calibrated_lot, actual_risk_usd).
+    """
+    stop_dist = abs(float(entry) - float(sl))
+    if stop_dist <= 0 or sym_info is None:
+        return 0.01, 0.0
+
+    point = float(sym_info.point) if sym_info.point > 0 else 0.0001
+    tick_val = float(sym_info.trade_tick_value) if sym_info.trade_tick_value > 0 else 1.0
+    tick_size = float(sym_info.trade_tick_size) if sym_info.trade_tick_size > 0 else point
+    usd_per_price_1lot = tick_val / tick_size
+
+    risk_per_1lot = stop_dist * usd_per_price_1lot
+    if risk_per_1lot <= 0:
+        return 0.01, 0.0
+
+    target_usd = V11_RISK_BUDGET_USD.get(sleeve_key, 4.50)
+    vol_min = float(sym_info.volume_min) if sym_info.volume_min > 0 else 0.01
+    vol_step = float(sym_info.volume_step) if sym_info.volume_step > 0 else 0.01
+    vol_max = min(float(sym_info.volume_max) if sym_info.volume_max > 0 else 0.05, V11_MAX_LOT_CAP.get(sleeve_key, 0.05))
+
+    raw_lot = target_usd / risk_per_1lot
+    # Floor to nearest broker volume_step so we never exceed target dollar risk
+    steps = math.floor((raw_lot + 1e-9) / vol_step)
+    lot = round(max(vol_min, min(vol_max, steps * vol_step)), 2)
+    actual_risk_usd = round(lot * risk_per_1lot, 2)
+    return lot, actual_risk_usd
+
+def check_symbol_cooldown(symbol: str, now_utc: datetime) -> tuple[bool, str]:
+    """
+    Enforces:
+    - 15-minute (900s) mandatory cooldown after any losing exit on `symbol`
+    - 60-minute (3600s) pause after 2 consecutive losses on `symbol`
+    """
+    try:
+        t_from = now_utc - timedelta(hours=4)
+        deals = mt5.history_deals_get(t_from, now_utc) or []
+        sym_outs = [
+            d for d in deals
+            if d.symbol == symbol and d.entry in (mt5.DEAL_ENTRY_OUT, mt5.DEAL_ENTRY_OUT_BY)
+        ]
+        if not sym_outs:
+            return False, ""
+
+        sym_outs.sort(key=lambda d: int(d.time))
+        last_d = sym_outs[-1]
+        last_net = float(last_d.profit) + float(last_d.swap) + float(last_d.commission)
+        elapsed = (now_utc - datetime.fromtimestamp(int(last_d.time), tz=timezone.utc)).total_seconds()
+
+        # Check 2 consecutive losses -> 60m cooldown
+        if len(sym_outs) >= 2:
+            prev_d = sym_outs[-2]
+            prev_net = float(prev_d.profit) + float(prev_d.swap) + float(prev_d.commission)
+            if last_net < 0 and prev_net < 0 and elapsed < 3600:
+                rem = int((3600 - elapsed) // 60) + 1
+                return True, f"2_LOSS_STREAK_PAUSE ({rem}m left)"
+
+        # Check single stop-out -> 15m cooldown
+        if last_net < 0 and elapsed < 900:
+            rem = int((900 - elapsed) // 60) + 1
+            return True, f"POST_SL_15M_COOLDOWN ({rem}m left)"
+
+        return False, ""
+    except Exception:
+        return False, ""
+
+def run_startup_self_test(sleeve_key: str) -> bool:
+    """
+    Pre-flight dry-run assertion before entering the live trading loop.
+    Catches signature mismatches or broken helpers immediately on boot.
+    """
+    class _DummyInfo:
+        point = 0.01
+        digits = 2
+        spread = 20
+        trade_tick_value = 0.01
+        trade_tick_size = 0.01
+        volume_min = 0.01
+        volume_step = 0.01
+        volume_max = 1.00
+
+    dummy_rates = [
+        {"open": 100.0 + i * 0.05, "high": 100.2 + i * 0.05, "low": 99.8 + i * 0.05, "close": 100.1 + i * 0.05}
+        for i in range(170)
+    ]
+    _ = evaluate_m5_setup(sleeve_key, "BTCUSD", dummy_rates, _DummyInfo())
+    lot, r_usd = compute_volatility_parity_lot(sleeve_key, "BTCUSD", 65000.0, 64550.0, _DummyInfo())
+    assert lot >= 0.01 and r_usd > 0, f"Invalid sizer output: lot={lot}, risk={r_usd}"
+    h1_test = evaluate_h1_pdh_pdl_context("BTCUSD", dummy_rates[:60], dummy_rates[:3])
+    ok_t, _ = passes_htf_liquidity_gate(sleeve_key, "BUY", 105.0, 104.0, 106.0, h1_test)
+    assert isinstance(ok_t, bool)
+    logging.info(f"[{sleeve_key}] v11.2 Pre-Flight Self-Test PASSED (H1/PDH/PDL Gate +  (RiskBudget=${V11_RISK_BUDGET_USD.get(sleeve_key, 4.50):.2f} | SampleLot={lot}L)")
+    return True
+# === QUANT-NEXUS v11.0 INSTITUTIONAL CORE END ===
+
+# === QUANT-NEXUS v11.2 H1 & PDH/PDL LIQUIDITY ENGINE START ===
+def evaluate_h1_pdh_pdl_context(symbol: str, h1_rates=None, d1_rates=None) -> dict:
+    """
+    Computes H1 Swing Structure (EMA20/EMA50 + 12-bar H1 swing structure)
+    and Previous Day High/Low (PDH/PDL) liquidity boundaries.
+    """
+    if h1_rates is None:
+        h1_rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_H1, 0, 60)
+    if d1_rates is None:
+        d1_rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_D1, 0, 3)
+
+    ctx = {
+        "valid": False,
+        "h1_bull": True,
+        "h1_bear": True,
+        "h1_atr": 0.0,
+        "h1_swing_hi": 0.0,
+        "h1_swing_lo": 0.0,
+        "pdh": 0.0,
+        "pdl": 0.0,
+        "has_pd_levels": False,
+    }
+
+    if h1_rates is not None and len(h1_rates) >= 52:
+        h1_closes = [float(r["close"]) for r in h1_rates]
+        h1_highs = [float(r["high"]) for r in h1_rates]
+        h1_lows = [float(r["low"]) for r in h1_rates]
+
+        def _ema(vals, period):
+            k = 2.0 / (period + 1)
+            out = [vals[0]]
+            for v in vals[1:]:
+                out.append(v * k + out[-1] * (1.0 - k))
+            return out
+
+        ema20 = _ema(h1_closes, 20)
+        ema50 = _ema(h1_closes, 50)
+        h1_trs = [
+            max(h1_highs[i] - h1_lows[i], abs(h1_highs[i] - h1_closes[i - 1]), abs(h1_lows[i] - h1_closes[i - 1]))
+            for i in range(1, len(h1_rates))
+        ]
+        h1_atr = sum(h1_trs[-14:]) / 14.0 if len(h1_trs) >= 14 else 0.0
+        h1_swing_hi = max(h1_highs[-14:-2])
+        h1_swing_lo = min(h1_lows[-14:-2])
+        last_h1_close = h1_closes[-2]
+
+        ctx["valid"] = True
+        ctx["h1_atr"] = h1_atr
+        ctx["h1_swing_hi"] = h1_swing_hi
+        ctx["h1_swing_lo"] = h1_swing_lo
+        ctx["h1_bull"] = (ema20[-2] > ema50[-2]) and (last_h1_close > h1_swing_lo)
+        ctx["h1_bear"] = (ema20[-2] < ema50[-2]) and (last_h1_close < h1_swing_hi)
+
+    if d1_rates is not None and len(d1_rates) >= 2:
+        # Index -2 is yesterday's completed D1 candle (PDH / PDL)
+        ctx["pdh"] = float(d1_rates[-2]["high"])
+        ctx["pdl"] = float(d1_rates[-2]["low"])
+        ctx["has_pd_levels"] = ctx["pdh"] > ctx["pdl"] > 0.0
+
+    return ctx
+
+def passes_htf_liquidity_gate(
+    sleeve_key: str,
+    direction: str,
+    entry: float,
+    bar_low: float,
+    bar_high: float,
+    htf_ctx: dict,
+) -> tuple[bool, str]:
+    """
+    Validates M5 signal against H1 Swing Structure and PDH/PDL liquidity pools:
+    - T1 & T3 (Momentum/Breakout): Requires H1 trend/structure alignment and blocks
+      breakout entries trapped directly beneath unaccepted PDH or above unaccepted PDL.
+    - T2 (GBPUSD Sweep-Reclaim): Allows H1-aligned sweep-reclaims AND upgrades entries
+      that sweep & reclaim PDH/PDL liquidity pools.
+    """
+    if not htf_ctx or not htf_ctx.get("valid"):
+        return True, ""
+
+    is_buy = (direction == "BUY")
+    h1_atr = htf_ctx["h1_atr"]
+    pdh = htf_ctx["pdh"]
+    pdl = htf_ctx["pdl"]
+    has_pd = htf_ctx["has_pd_levels"]
+
+    # 1. T2 GBPUSD Sweep-Reclaim: Check for institutional PDH/PDL liquidity sweep first
+    if sleeve_key == "T2":
+        if is_buy and has_pd and bar_low < pdl and entry > pdl:
+            return True, "PDL_SWEEP_RECLAIM_LONG"
+        if not is_buy and has_pd and bar_high > pdh and entry < pdh:
+            return True, "PDH_SWEEP_RECLAIM_SHORT"
+        if is_buy and not htf_ctx["h1_bull"]:
+            return False, "H1_BEAR_STRUCTURE_BLOCK"
+        if not is_buy and not htf_ctx["h1_bear"]:
+            return False, "H1_BULL_STRUCTURE_BLOCK"
+        return True, ""
+
+    # 2. T1 (BTCUSD/US30) & T3 (XAUUSD): Require H1 Swing Structure alignment
+    if is_buy and not htf_ctx["h1_bull"]:
+        return False, "H1_STRUCTURE_COUNTER_LONG"
+    if not is_buy and not htf_ctx["h1_bear"]:
+        return False, "H1_STRUCTURE_COUNTER_SHORT"
+
+    # 3. Anti-Exhaustion Guard at Previous Day High / Low (PDH/PDL liquidity wall)
+    if has_pd and h1_atr > 0:
+        buffer_zone = 0.35 * h1_atr
+        # Block long breakout entries firing right into PDH resistance without acceptance above PDH
+        if is_buy and (pdh - buffer_zone) <= entry < pdh:
+            return False, "PDH_LIQUIDITY_WALL_BLOCK"
+        # Block short breakout entries firing right into PDL support without acceptance below PDL
+        if not is_buy and pdl < entry <= (pdl + buffer_zone):
+            return False, "PDL_LIQUIDITY_WALL_BLOCK"
+
+    return True, ""
+# === QUANT-NEXUS v11.2 H1 & PDH/PDL LIQUIDITY ENGINE END ===
+
 def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict | None:
     """v10.10 Production M15-Regime + Spread-Efficiency + Pruned Roster Evaluator (Flexible Caller Signature)."""
     if arg1 in ("T1", "T2", "T3") and isinstance(arg2, str):
@@ -214,7 +443,7 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
     tick_size = float(sym_info.trade_tick_size) if sym_info.trade_tick_size > 0 else point
     lot = 0.02 if sleeve_key == "T2" else 0.01
     usd_per_price_unit = (tick_val / tick_size) * lot
-    max_risk_usd = 4.50 if "BTC" in symbol.upper() else 99.0
+    max_risk_usd = 12.00 if "BTC" in symbol.upper() else 99.0  # v11.0 sizer scales lot down to $4.50 risk
 
     closes = [float(r["close"]) for r in rates]
     opens = [float(r["open"]) for r in rates]
@@ -245,6 +474,7 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
     htf_bear = ema60[-2] < ema150[-2] and ema60[-2] < ema60[-5]
 
     o, h, l, c = opens[-2], highs[-2], lows[-2], closes[-2]
+    htf_ctx = evaluate_h1_pdh_pdl_context(symbol)
     swing_hi = max(highs[-10:-2])
     swing_lo = min(lows[-10:-2])
     box_h = swing_hi - swing_lo
@@ -254,18 +484,32 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
         if htf_bull and l < swing_lo and c > swing_lo and c > o and (c - l) > 0.55 * (h - l):
             entry = round(closes[-1] + sp_px, digits)
             risk = max(entry - (l - 0.25 * atr), 1.25 * atr, 6.0 * sp_px)
+            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
+            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
+                return None
+            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "BUY", entry, l, h, htf_ctx)
+            if not htf_ok:
+                return None
             return {
+                "lot": vp_lot, "risk_usd": vp_risk,
                 "order_kind": "MARKET", "direction": "BUY", "entry": entry,
                 "sl": round(entry - risk, digits), "tp": round(entry + 2.2 * risk, digits),
-                "score": 85.0, "tag": "M5_SWEEP_RECLAIM_LONG"
+                "score": 85.0, "tag": htf_tag_override or "M5_SWEEP_RECLAIM_LONG"
             }
         if htf_bear and h > swing_hi and c < swing_hi and c < o and (h - c) > 0.55 * (h - l):
             entry = round(closes[-1], digits)
             risk = max((h + 0.25 * atr) - entry, 1.25 * atr, 6.0 * sp_px)
+            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
+            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
+                return None
+            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "SELL", entry, l, h, htf_ctx)
+            if not htf_ok:
+                return None
             return {
+                "lot": vp_lot, "risk_usd": vp_risk,
                 "order_kind": "MARKET", "direction": "SELL", "entry": entry,
                 "sl": round(entry + risk, digits), "tp": round(entry - 2.2 * risk, digits),
-                "score": 85.0, "tag": "M5_SWEEP_RECLAIM_SHORT"
+                "score": 85.0, "tag": htf_tag_override or "M5_SWEEP_RECLAIM_SHORT"
             }
         return None
 
@@ -277,7 +521,14 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
         entry = round(closes[-1] + sp_px, digits)
         risk = max(1.30 * atr, 6.0 * sp_px)
         if risk * usd_per_price_unit <= max_risk_usd:
+            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
+            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
+                return None
+            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "BUY", entry, l, h, htf_ctx)
+            if not htf_ok:
+                return None
             return {
+                "lot": vp_lot, "risk_usd": vp_risk,
                 "order_kind": "MARKET", "direction": "BUY", "entry": entry,
                 "sl": round(entry - risk, digits), "tp": round(entry + 2.2 * risk, digits),
                 "score": 87.0, "tag": "M5_IMPULSE_LONG"
@@ -286,7 +537,14 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
         entry = round(closes[-1], digits)
         risk = max(1.30 * atr, 6.0 * sp_px)
         if risk * usd_per_price_unit <= max_risk_usd:
+            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
+            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
+                return None
+            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "SELL", entry, l, h, htf_ctx)
+            if not htf_ok:
+                return None
             return {
+                "lot": vp_lot, "risk_usd": vp_risk,
                 "order_kind": "MARKET", "direction": "SELL", "entry": entry,
                 "sl": round(entry + risk, digits), "tp": round(entry - 2.2 * risk, digits),
                 "score": 87.0, "tag": "M5_IMPULSE_SHORT"
@@ -298,7 +556,14 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
             entry = round(swing_hi + buf + sp_px, digits)
             risk = max(1.25 * atr, 6.0 * sp_px)
             if risk * usd_per_price_unit <= max_risk_usd:
-                return {
+                vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
+            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
+                return None
+            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "BUY", entry, l, h, htf_ctx)
+            if not htf_ok:
+                return None
+            return {
+                "lot": vp_lot, "risk_usd": vp_risk,
                     "order_kind": "PENDING_STOP", "direction": "BUY", "entry": entry,
                     "sl": round(entry - risk, digits), "tp": round(entry + 2.2 * risk, digits),
                     "score": 82.0, "tag": "M5_BUY_STOP"
@@ -307,7 +572,14 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
             entry = round(swing_lo - buf, digits)
             risk = max(1.25 * atr, 6.0 * sp_px)
             if risk * usd_per_price_unit <= max_risk_usd:
-                return {
+                vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
+            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
+                return None
+            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "SELL", entry, l, h, htf_ctx)
+            if not htf_ok:
+                return None
+            return {
+                "lot": vp_lot, "risk_usd": vp_risk,
                     "order_kind": "PENDING_STOP", "direction": "SELL", "entry": entry,
                     "sl": round(entry + risk, digits), "tp": round(entry - 2.2 * risk, digits),
                     "score": 82.0, "tag": "M5_SELL_STOP"
@@ -420,10 +692,12 @@ def run_worker(sleeve_key: str):
         logging.error(f"[{sleeve_key}] MT5 init failed on {cfg['path']}: {mt5.last_error()}")
         sys.exit(1)
 
-    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v10.2 ONLINE on #{cfg['login']}")
+    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v11.2 INSTITUTIONAL + H1/PDH-PDL ONLINE on #{cfg['login']}")
     last_bar_traded = {}
     tracked_pending_tickets = {}  # order_ticket -> dict metadata
     announced_open_tickets = set()
+    run_startup_self_test(sleeve_key)
+    consecutive_errors = 0
     dd_halt_alerted_date = None
     tracked_utc_day = None
     daily_dd_floor = 960.0
@@ -492,6 +766,7 @@ def run_worker(sleeve_key: str):
                         f"• Flattened Positions: <b>{closed_cnt}</b> | Purged Pending: <b>{purged_cnt}</b>\n"
                         f"• Status: <b>FLAT & HALTED</b> until next UTC session reset."
                     )
+                consecutive_errors = 0
                 update_heartbeat(sleeve_key, cfg["login"], equity, len(mt5.positions_get() or []), "DD_CIRCUIT_HALT")
                 time.sleep(30)
                 continue
@@ -502,7 +777,17 @@ def run_worker(sleeve_key: str):
                     purge_nexus_pending_orders(sleeve_key, "ROLLOVER_BLACKOUT")
                 if now_utc.hour == 21 and 45 <= now_utc.minute <= 57:
                     guard_t3_pre_rollover(sleeve_key, cfg, positions)
+                consecutive_errors = 0
                 update_heartbeat(sleeve_key, cfg["login"], equity, len(mt5.positions_get() or []), "ROLLOVER_GUARD")
+                time.sleep(15)
+                continue
+
+            is_macro_blackout, macro_reason = check_usd_macro_blackout(now_utc)
+            if is_macro_blackout:
+                if pending_orders:
+                    purge_nexus_pending_orders(sleeve_key, "MACRO_NEWS_BLACKOUT")
+                consecutive_errors = 0
+                update_heartbeat(sleeve_key, cfg["login"], equity, open_count, f"NEWS_BLACKOUT ({macro_reason})")
                 time.sleep(15)
                 continue
 
@@ -510,6 +795,7 @@ def run_worker(sleeve_key: str):
             if open_count >= cfg["max_open"]:
                 if pending_orders:
                     purge_nexus_pending_orders(sleeve_key, "POSITION_FILLED_OCO")
+                consecutive_errors = 0
                 update_heartbeat(sleeve_key, cfg["login"], equity, open_count, "MANAGING_ACTIVE")
                 time.sleep(5)
                 continue
@@ -662,13 +948,23 @@ def run_worker(sleeve_key: str):
 
             p_count = len([o for o in (mt5.orders_get() or []) if o.magic == 202610])
             status_str = f"ACTIVE_HYBRID (Open:{open_count} Pend:{p_count})" if cfg["enable_pending_breakout"] else f"ACTIVE_SCALP (Open:{open_count})"
+            consecutive_errors = 0
             update_heartbeat(sleeve_key, cfg["login"], equity, open_count, status_str)
             time.sleep(3)
 
         except KeyboardInterrupt:
             break
         except Exception as e:
-            logging.error(f"[{sleeve_key}] Loop exception: {e}")
+            consecutive_errors += 1
+            logging.error(f"[{sleeve_key}] Loop exception ({consecutive_errors}/3): {e}")
+            if consecutive_errors >= 3:
+                send_nexus_tg(
+                    f"?? <b>[NEXUS {sleeve_key} // 3-STRIKE CRITICAL RESTART]</b>\n"
+                    f"? Error: <code>{e}</code>\n"
+                    f"? Action: Exiting worker so Watchdog relaunches cleanly."
+                )
+                mt5.shutdown()
+                sys.exit(1)
             time.sleep(5)
 
     mt5.shutdown()
