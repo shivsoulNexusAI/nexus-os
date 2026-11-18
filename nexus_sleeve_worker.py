@@ -1,4 +1,5 @@
 from macro_news_gate import check_usd_macro_blackout
+from portfolio_heat_governor import sync_sleeve_exposure, evaluate_portfolio_heat_gate
 # -*- coding: utf-8 -*-
 """
 SHIVSOUL NEXUS v10.2 // ADAPTIVE M5 HYBRID SCALPER + REAL-TIME TELEGRAM TELEMETRY
@@ -297,7 +298,9 @@ def run_startup_self_test(sleeve_key: str) -> bool:
     h1_test = evaluate_h1_pdh_pdl_context("BTCUSD", dummy_rates[:60], dummy_rates[:3])
     ok_t, _ = passes_htf_liquidity_gate(sleeve_key, "BUY", 105.0, 104.0, 106.0, h1_test)
     assert isinstance(ok_t, bool)
-    logging.info(f"[{sleeve_key}] v11.2 Pre-Flight Self-Test PASSED (H1/PDH/PDL Gate +  (RiskBudget=${V11_RISK_BUDGET_USD.get(sleeve_key, 4.50):.2f} | SampleLot={lot}L)")
+    h_ok, _ = evaluate_portfolio_heat_gate(sleeve_key, "BTCUSD", "SELL", 4.50)
+    assert isinstance(h_ok, bool)
+    logging.info(f"[{sleeve_key}] v11.3 Pre-Flight Self-Test PASSED (PortfolioHeat + H1/PDH/PDL Gate +  (RiskBudget=${V11_RISK_BUDGET_USD.get(sleeve_key, 4.50):.2f} | SampleLot={lot}L)")
     return True
 # === QUANT-NEXUS v11.0 INSTITUTIONAL CORE END ===
 
@@ -692,7 +695,7 @@ def run_worker(sleeve_key: str):
         logging.error(f"[{sleeve_key}] MT5 init failed on {cfg['path']}: {mt5.last_error()}")
         sys.exit(1)
 
-    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v11.2 INSTITUTIONAL + H1/PDH-PDL ONLINE on #{cfg['login']}")
+    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v11.3 INSTITUTIONAL + PORTFOLIO-HEAT ONLINE on #{cfg['login']}")
     last_bar_traded = {}
     tracked_pending_tickets = {}  # order_ticket -> dict metadata
     announced_open_tickets = set()
@@ -714,6 +717,7 @@ def run_worker(sleeve_key: str):
             positions = mt5.positions_get() or []
             pending_orders = [o for o in (mt5.orders_get() or []) if o.magic == 202610]
             open_count = len(positions)
+            sync_sleeve_exposure(sleeve_key, positions, {pos.symbol: mt5.symbol_info(pos.symbol) for pos in positions}, now_utc)
 
             # Detect any pending stop order that triggered into a live position
             for p in positions:
@@ -822,6 +826,13 @@ def run_worker(sleeve_key: str):
 
                 setup = evaluate_m5_setup(sym)
                 if not setup:
+                    continue
+
+                heat_ok, heat_reason = evaluate_portfolio_heat_gate(
+                    sleeve_key, sym, setup["direction"], float(setup.get("risk_usd", 4.50)), now_utc
+                )
+                if not heat_ok:
+                    logging.info(f"[{sleeve_key}] {sym} {setup['direction']} blocked by v11.3 Portfolio Governor: {heat_reason}")
                     continue
 
                 direction = setup["direction"]
