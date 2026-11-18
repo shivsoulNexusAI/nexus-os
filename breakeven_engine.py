@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS RAPID PROFIT PROTECTION & DYNAMIC TRAILING ENGINE (V2.1)
 Covers Silo 1 (#278062038), Silo 2 (#278062039), and Silo 3 (#278062042)
@@ -215,9 +215,9 @@ def audit_silo(silo):
         gain = (mark - open_price) if is_buy else (open_price - mark)
         r_mult = gain / initial_risk if initial_risk > 0 else 0.0
 
-        # === TIER 1: BREAKEVEN LOCK AT +1.00R (Locks +0.20R cushion) ===
-        if r_mult >= 1.00:
-            be_cushion = max(spread_pad, 0.20 * initial_risk)
+        # === TIER 1: BREAKEVEN LOCK AT +0.65R (Locks +0.20R cushion) ===
+        if r_mult >= 0.65:
+            be_cushion = max(spread_pad, 0.18 * initial_risk)
             target_be_sl = round(open_price + be_cushion if is_buy else open_price - be_cushion, digits)
             eps = 0.5 * point
             needs_be_lock = (is_buy and ((target_be_sl - sl) > eps or sl == 0.0)) or (
@@ -233,9 +233,9 @@ def audit_silo(silo):
                     "tp": p.tp
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    log.info("[TIER 1 +1.00R BE-LOCK] %s #%s (%s) at +%.2fR -> SL locked at %s", silo["name"], ticket, sym, r_mult, target_be_sl)
+                    log.info("[TIER 1 +0.65R BE-LOCK] %s #%s (%s) at +%.2fR -> SL locked at %s", silo["name"], ticket, sym, r_mult, target_be_sl)
                     send_be_tg(
-                        f"🛡️ <b>[NEXUS BE V2.1 // +1.00R BREAKEVEN LOCK]</b>\n"
+                        f"🛡️ <b>[NEXUS BE V2.1 // +0.65R BREAKEVEN LOCK]</b>\n"
                         f"• Silo: <b>{silo['name']}</b> (<code>#{login}</code>)\n"
                         f"• Asset: <b>{sym}</b> ({side_str} {volume}L) | Ticket: <code>#{ticket}</code>\n"
                         f"• Expansion: <b>+{r_mult:.2f}R</b> (Entry: <code>{open_price}</code>)\n"
@@ -243,8 +243,8 @@ def audit_silo(silo):
                     )
                     sl = target_be_sl
 
-        # === TIER 2: 50% PARTIAL HARVEST AT +1.60R (Positions >= 0.02 lots) ===
-        if r_mult >= 1.60 and ticket not in scaled_tickets:
+        # === TIER 2: 50% PARTIAL HARVEST AT +1.15R (Positions >= 0.02 lots) ===
+        if r_mult >= 1.15 and ticket not in scaled_tickets:
             step = sym_info.volume_step
             min_lot = sym_info.volume_min
             half_vol = round(math.floor((volume / 2.0) / step) * step, 2)
@@ -271,16 +271,16 @@ def audit_silo(silo):
                     rem_vol = round(volume - half_vol, 2)
                     log.info("[TIER 2 HARVEST] %s #%s (%s) banked 50%% (%.2fL) at +%.2fR", silo["name"], ticket, sym, half_vol, r_mult)
                     send_be_tg(
-                        f"💰 <b>[NEXUS BE V2.1 // +1.60R PARTIAL HARVEST]</b>\n"
+                        f"💰 <b>[NEXUS BE V2.1 // +1.15R PARTIAL HARVEST]</b>\n"
                         f"• Silo: <b>{silo['name']}</b> (<code>#{login}</code>)\n"
                         f"• Asset: <b>{sym}</b> ({side_str}) | Ticket: <code>#{ticket}</code>\n"
                         f"• Banked 50%: <b>{half_vol}L</b> @ <code>{close_price}</code> (<b>+{r_mult:.2f}R</b>)\n"
                         f"• Active Runner: <b>{rem_vol}L</b> riding with SL <code>{sl}</code>"
                     )
 
-        # === TIER 3: M5 STRUCTURAL TRAILING STOP (Activates >= +1.50R) ===
-        if r_mult >= 1.50:
-            rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M5, 1, 2)
+        # === TIER 3: M1 MICRO-SWING TRAILING STOP (Activates >= +1.50R) ===
+        if r_mult >= 1.05:
+            rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 1, 2)
             if rates is not None and len(rates) >= 2:
                 proposed_sl = None
                 if is_buy:
@@ -308,7 +308,7 @@ def audit_silo(silo):
                         if (now_ts - last_trail_tg_ts.get(ticket, 0.0)) >= 60.0:
                             last_trail_tg_ts[ticket] = now_ts
                             send_be_tg(
-                                f"📈 <b>[NEXUS BE V2.1 // +1.50R M5 STRUCTURAL TRAIL]</b>\n"
+                                f"📈 <b>[NEXUS BE V2.1 // +1.50R M1 MICRO-SWING TRAIL]</b>\n"
                                 f"• Silo: <b>{silo['name']}</b> (<code>#{login}</code>)\n"
                                 f"• Asset: <b>{sym}</b> ({side_str}) | Ticket: <code>#{ticket}</code>\n"
                                 f"• Current Gain: <b>+{r_mult:.2f}R</b>\n"
@@ -328,7 +328,7 @@ def main():
                 audit_silo(silo)
         except Exception as e:
             log.error("Breakeven cycle exception: %s", e)
-        time.sleep(3)
+        time.sleep(0.5)
 
 if __name__ == "__main__":
     main()

@@ -421,7 +421,12 @@ def passes_htf_liquidity_gate(
 # === QUANT-NEXUS v11.2 H1 & PDH/PDL LIQUIDITY ENGINE END ===
 
 def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict | None:
-    """v10.10 Production M15-Regime + Spread-Efficiency + Pruned Roster Evaluator (Flexible Caller Signature)."""
+    """
+    QUANT-NEXUS v12.0 NEXT-GEN M1/M15 UNIFIED MICRO-SCALP ENGINE
+    - M15 EMA20/EMA50 fast directional regime + PDH/PDL liquidity gate
+    - M1 Micro-Liquidity Sweep Reclaim & M1 Impulse Momentum Strike
+    - Tight M1 ATR stop geometry calibrated for 0.01L-0.05L volatility parity
+    """
     if arg1 in ("T1", "T2", "T3") and isinstance(arg2, str):
         sleeve_key = arg1
         symbol = arg2
@@ -433,161 +438,96 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
         sym_info = mt5.symbol_info(symbol)
     if sym_info is None:
         return None
-    if rates is None:
-        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 200)
-    if rates is None or len(rates) < 160:
+
+    m1_rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M1, 0, 60)
+    m15_rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 65)
+    if m1_rates is None or len(m1_rates) < 30 or m15_rates is None or len(m15_rates) < 55:
         return None
 
     point = float(sym_info.point)
     digits = int(sym_info.digits)
-    sp_pts = int(sym_info.spread)
-    sp_px = sp_pts * point
-    tick_val = float(sym_info.trade_tick_value) if sym_info.trade_tick_value > 0 else 1.0
-    tick_size = float(sym_info.trade_tick_size) if sym_info.trade_tick_size > 0 else point
-    lot = 0.02 if sleeve_key == "T2" else 0.01
-    usd_per_price_unit = (tick_val / tick_size) * lot
-    max_risk_usd = 12.00 if "BTC" in symbol.upper() else 99.0  # v11.0 sizer scales lot down to $4.50 risk
+    sp_px = int(sym_info.spread) * point
 
-    closes = [float(r["close"]) for r in rates]
-    opens = [float(r["open"]) for r in rates]
-    highs = [float(r["high"]) for r in rates]
-    lows = [float(r["low"]) for r in rates]
-
-    trs = [
-        max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
-        for i in range(1, len(rates))
-    ]
-    atr = sum(trs[-14:]) / 14.0
-    if atr <= 0 or atr < (5.0 * sp_px):
-        return None
-
-    def ema_series(vals, period):
-        k = 2.0 / (period + 1)
+    def _ema(vals, period):
+        k = 2.0 / (period + 1.0)
         out = [vals[0]]
         for v in vals[1:]:
             out.append(v * k + out[-1] * (1.0 - k))
         return out
 
-    ema9 = ema_series(closes, 9)
-    ema21 = ema_series(closes, 21)
-    ema60 = ema_series(closes, 60)
-    ema150 = ema_series(closes, 150)
-
-    htf_bull = ema60[-2] > ema150[-2] and ema60[-2] > ema60[-5]
-    htf_bear = ema60[-2] < ema150[-2] and ema60[-2] < ema60[-5]
-
-    o, h, l, c = opens[-2], highs[-2], lows[-2], closes[-2]
-    htf_ctx = evaluate_h1_pdh_pdl_context(symbol)
-    swing_hi = max(highs[-10:-2])
-    swing_lo = min(lows[-10:-2])
-    box_h = swing_hi - swing_lo
-
-    # T2 GBPUSD (0.02L): Liquidity-Sweep Reclaim Entry
-    if sleeve_key == "T2":
-        if htf_bull and l < swing_lo and c > swing_lo and c > o and (c - l) > 0.55 * (h - l):
-            entry = round(closes[-1] + sp_px, digits)
-            risk = max(entry - (l - 0.25 * atr), 1.25 * atr, 6.0 * sp_px)
-            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
-            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
-                return None
-            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "BUY", entry, l, h, htf_ctx)
-            if not htf_ok:
-                return None
-            return {
-                "lot": vp_lot, "risk_usd": vp_risk,
-                "order_kind": "MARKET", "direction": "BUY", "entry": entry,
-                "sl": round(entry - risk, digits), "tp": round(entry + 2.2 * risk, digits),
-                "score": 85.0, "tag": htf_tag_override or "M5_SWEEP_RECLAIM_LONG"
-            }
-        if htf_bear and h > swing_hi and c < swing_hi and c < o and (h - c) > 0.55 * (h - l):
-            entry = round(closes[-1], digits)
-            risk = max((h + 0.25 * atr) - entry, 1.25 * atr, 6.0 * sp_px)
-            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
-            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
-                return None
-            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "SELL", entry, l, h, htf_ctx)
-            if not htf_ok:
-                return None
-            return {
-                "lot": vp_lot, "risk_usd": vp_risk,
-                "order_kind": "MARKET", "direction": "SELL", "entry": entry,
-                "sl": round(entry + risk, digits), "tp": round(entry - 2.2 * risk, digits),
-                "score": 85.0, "tag": htf_tag_override or "M5_SWEEP_RECLAIM_SHORT"
-            }
+    # 1. M15 Fast Trend Context
+    m15_closes = [float(r["close"]) for r in m15_rates]
+    m15_ema20 = _ema(m15_closes, 20)
+    m15_ema50 = _ema(m15_closes, 50)
+    trend_bull = (m15_ema20[-2] > m15_ema50[-2]) and (m15_ema20[-2] >= m15_ema20[-4])
+    trend_bear = (m15_ema20[-2] < m15_ema50[-2]) and (m15_ema20[-2] <= m15_ema20[-4])
+    if not (trend_bull or trend_bear):
         return None
 
-    # T1 (BTCUSD/US30) & T3 (XAUUSD 07:00-20:00 UTC): M15-Aligned Hybrid Market + 15m TTL Stop
-    bull = htf_bull and ema9[-2] > ema21[-2]
-    bear = htf_bear and ema9[-2] < ema21[-2]
+    # 2. M1 Micro-Structure & ATR Calibration
+    opens = [float(r["open"]) for r in m1_rates]
+    highs = [float(r["high"]) for r in m1_rates]
+    lows = [float(r["low"]) for r in m1_rates]
+    closes = [float(r["close"]) for r in m1_rates]
 
-    if bull and c > swing_hi and (c - l) > 0.60 * atr:
-        entry = round(closes[-1] + sp_px, digits)
-        risk = max(1.30 * atr, 6.0 * sp_px)
-        if risk * usd_per_price_unit <= max_risk_usd:
-            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
-            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
-                return None
-            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "BUY", entry, l, h, htf_ctx)
-            if not htf_ok:
-                return None
-            return {
-                "lot": vp_lot, "risk_usd": vp_risk,
-                "order_kind": "MARKET", "direction": "BUY", "entry": entry,
-                "sl": round(entry - risk, digits), "tp": round(entry + 2.2 * risk, digits),
-                "score": 87.0, "tag": "M5_IMPULSE_LONG"
-            }
-    if bear and c < swing_lo and (h - c) > 0.60 * atr:
-        entry = round(closes[-1], digits)
-        risk = max(1.30 * atr, 6.0 * sp_px)
-        if risk * usd_per_price_unit <= max_risk_usd:
-            vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
-            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
-                return None
-            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "SELL", entry, l, h, htf_ctx)
-            if not htf_ok:
-                return None
-            return {
-                "lot": vp_lot, "risk_usd": vp_risk,
-                "order_kind": "MARKET", "direction": "SELL", "entry": entry,
-                "sl": round(entry + risk, digits), "tp": round(entry - 2.2 * risk, digits),
-                "score": 87.0, "tag": "M5_IMPULSE_SHORT"
-            }
+    trs = [max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1])) for i in range(1, len(m1_rates))]
+    m1_atr = sum(trs[-14:]) / 14.0
+    if m1_atr <= 0 or m1_atr < (2.2 * sp_px):
+        return None
 
-    if 0.25 * atr <= box_h <= 3.25 * atr:
-        buf = 0.18 * atr
-        if bull and swing_lo < c <= swing_hi:
-            entry = round(swing_hi + buf + sp_px, digits)
-            risk = max(1.25 * atr, 6.0 * sp_px)
-            if risk * usd_per_price_unit <= max_risk_usd:
-                vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
-            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
-                return None
-            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "BUY", entry, l, h, htf_ctx)
-            if not htf_ok:
-                return None
-            return {
-                "lot": vp_lot, "risk_usd": vp_risk,
-                    "order_kind": "PENDING_STOP", "direction": "BUY", "entry": entry,
-                    "sl": round(entry - risk, digits), "tp": round(entry + 2.2 * risk, digits),
-                    "score": 82.0, "tag": "M5_BUY_STOP"
-                }
-        if bear and swing_lo <= c < swing_hi:
-            entry = round(swing_lo - buf, digits)
-            risk = max(1.25 * atr, 6.0 * sp_px)
-            if risk * usd_per_price_unit <= max_risk_usd:
-                vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, round(entry - risk, digits) if "LONG" in block or "BUY" in block else round(entry + risk, digits), sym_info)
-            if vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.45):
-                return None
-            htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, "SELL", entry, l, h, htf_ctx)
-            if not htf_ok:
-                return None
-            return {
-                "lot": vp_lot, "risk_usd": vp_risk,
-                    "order_kind": "PENDING_STOP", "direction": "SELL", "entry": entry,
-                    "sl": round(entry + risk, digits), "tp": round(entry - 2.2 * risk, digits),
-                    "score": 82.0, "tag": "M5_SELL_STOP"
-                }
-    return None
+    o, h, l, c = opens[-2], highs[-2], lows[-2], closes[-2]
+    bar_rng = max(h - l, point)
+    body = abs(c - o)
+    swing_hi = max(highs[-10:-2])
+    swing_lo = min(lows[-10:-2])
+    htf_ctx = evaluate_h1_pdh_pdl_context(symbol)
+
+    direction = None
+    tag = None
+    score = 0.0
+
+    # Setup A: M1 Micro-Liquidity Sweep Reclaim
+    if trend_bull and l < swing_lo and c > swing_lo and c > o and (c - l) >= 0.55 * bar_rng:
+        direction, tag, score = "BUY", "M1_SWEEP_RECLAIM_LONG", 89.0
+    elif trend_bear and h > swing_hi and c < swing_hi and c < o and (h - c) >= 0.55 * bar_rng:
+        direction, tag, score = "SELL", "M1_SWEEP_RECLAIM_SHORT", 89.0
+
+    # Setup B: M1 High-Velocity Impulse Breakout aligned with M15 regime
+    elif trend_bull and c > swing_hi and c > o and bar_rng >= 0.80 * m1_atr and (body / bar_rng) >= 0.58:
+        direction, tag, score = "BUY", "M1_IMPULSE_STRIKE_LONG", 86.0
+    elif trend_bear and c < swing_lo and c < o and bar_rng >= 0.80 * m1_atr and (body / bar_rng) >= 0.58:
+        direction, tag, score = "SELL", "M1_IMPULSE_STRIKE_SHORT", 86.0
+
+    if not direction:
+        return None
+
+    # Tight micro-scalp stop distance (1.65x M1 ATR, floored at 4.5x spread)
+    sl_dist = round(max(1.65 * m1_atr, 4.5 * sp_px), digits)
+    entry = round(closes[-1] + sp_px, digits) if direction == "BUY" else round(closes[-1], digits)
+    sl = round(entry - sl_dist, digits) if direction == "BUY" else round(entry + sl_dist, digits)
+    tp = round(entry + 1.65 * sl_dist, digits) if direction == "BUY" else round(entry - 1.65 * sl_dist, digits)
+
+    vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, sl, sym_info)
+    if vp_lot <= 0.0 or vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.35):
+        return None
+
+    htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, direction, entry, l, h, htf_ctx)
+    if not htf_ok:
+        return None
+
+    return {
+        "mode": "MARKET",
+        "order_kind": "MARKET",
+        "direction": direction,
+        "entry": entry,
+        "sl": sl,
+        "tp": tp,
+        "sl_dist": sl_dist,
+        "lot": vp_lot,
+        "risk_usd": vp_risk,
+        "score": score,
+        "tag": htf_tag_override or tag,
+    }
 
 def guard_t3_pre_rollover(sleeve_key: str, cfg: dict, positions: list):
     """
@@ -695,7 +635,7 @@ def run_worker(sleeve_key: str):
         logging.error(f"[{sleeve_key}] MT5 init failed on {cfg['path']}: {mt5.last_error()}")
         sys.exit(1)
 
-    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v11.3 INSTITUTIONAL + PORTFOLIO-HEAT ONLINE on #{cfg['login']}")
+    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v12.0 NEXT-GEN M1/M15 MICRO-SCALPER ONLINE on #{cfg['login']}")
     last_bar_traded = {}
     tracked_pending_tickets = {}  # order_ticket -> dict metadata
     announced_open_tickets = set()
@@ -714,6 +654,9 @@ def run_worker(sleeve_key: str):
                 continue
 
             equity = float(acct.equity)
+            if equity <= 1.0:
+                time.sleep(2)
+                continue
             positions = mt5.positions_get() or []
             pending_orders = [o for o in (mt5.orders_get() or []) if o.magic == 202610]
             open_count = len(positions)
@@ -817,10 +760,10 @@ def run_worker(sleeve_key: str):
                 if not sym_info or not tick or sym_info.spread > cfg["max_spread_pts"]:
                     continue
 
-                m5_rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M5, 0, 2)
-                if m5_rates is None or len(m5_rates) < 2:
+                m1_rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 0, 2)
+                if m1_rates is None or len(m1_rates) < 2:
                     continue
-                bar_ts = int(m5_rates[-1]["time"])
+                bar_ts = int(m1_rates[-1]["time"])
                 if last_bar_traded.get(sym) == bar_ts:
                     continue
 
@@ -855,7 +798,7 @@ def run_worker(sleeve_key: str):
                 sl_ticks = sl_dist / tick_size
                 raw_lots = risk_usd / max(sl_ticks * tick_val, 0.01)
                 step = sym_info.volume_step
-                lots = max(sym_info.volume_min, min(0.10, round(round(raw_lots / step) * step, 2)))
+                lots = float(setup.get('lot') or max(sym_info.volume_min, min(0.10, round(round(raw_lots / step) * step, 2))))
                 digits = sym_info.digits
 
                 # === MODE A: IMMEDIATE MARKET SCALP ===
