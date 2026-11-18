@@ -422,10 +422,10 @@ def passes_htf_liquidity_gate(
 
 def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict | None:
     """
-    QUANT-NEXUS v12.0 NEXT-GEN M1/M15 UNIFIED MICRO-SCALP ENGINE
+    QUANT-NEXUS v12.1 NEXT-GEN M1/M15 UNIFIED MICRO-SCALP ENGINE (CLOSED-BAR + INTRA-BAR TICK VELOCITY)
     - M15 EMA20/EMA50 fast directional regime + PDH/PDL liquidity gate
-    - M1 Micro-Liquidity Sweep Reclaim & M1 Impulse Momentum Strike
-    - Tight M1 ATR stop geometry calibrated for 0.01L-0.05L volatility parity
+    - Priority 1 (Closed M1): M1 Micro-Liquidity Sweep Reclaim & M1 Impulse Strike
+    - Priority 2 (Forming M1): Sub-minute Intra-Bar Tick-Velocity Breakout (anti-chase capped at 1.75x M1_ATR)
     """
     if arg1 in ("T1", "T2", "T3") and isinstance(arg2, str):
         sleeve_key = arg1
@@ -475,9 +475,15 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
     if m1_atr <= 0 or m1_atr < (2.2 * sp_px):
         return None
 
+    # Completed M1 bar (-2) & Forming M1 bar (-1)
     o, h, l, c = opens[-2], highs[-2], lows[-2], closes[-2]
     bar_rng = max(h - l, point)
     body = abs(c - o)
+
+    cur_o, cur_h, cur_l, cur_c = opens[-1], highs[-1], lows[-1], closes[-1]
+    cur_rng = max(cur_h - cur_l, point)
+    cur_body = abs(cur_c - cur_o)
+
     swing_hi = max(highs[-10:-2])
     swing_lo = min(lows[-10:-2])
     htf_ctx = evaluate_h1_pdh_pdl_context(symbol)
@@ -485,25 +491,46 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
     direction = None
     tag = None
     score = 0.0
+    gate_low, gate_high = l, h
 
-    # Setup A: M1 Micro-Liquidity Sweep Reclaim
+    # Priority 1A: Closed M1 Micro-Liquidity Sweep Reclaim
     if trend_bull and l < swing_lo and c > swing_lo and c > o and (c - l) >= 0.55 * bar_rng:
-        direction, tag, score = "BUY", "M1_SWEEP_RECLAIM_LONG", 89.0
+        direction, tag, score = "BUY", "M1_SWEEP_RECLAIM_LONG", 90.0
     elif trend_bear and h > swing_hi and c < swing_hi and c < o and (h - c) >= 0.55 * bar_rng:
-        direction, tag, score = "SELL", "M1_SWEEP_RECLAIM_SHORT", 89.0
+        direction, tag, score = "SELL", "M1_SWEEP_RECLAIM_SHORT", 90.0
 
-    # Setup B: M1 High-Velocity Impulse Breakout aligned with M15 regime
+    # Priority 1B: Closed M1 Impulse Breakout
     elif trend_bull and c > swing_hi and c > o and bar_rng >= 0.80 * m1_atr and (body / bar_rng) >= 0.58:
-        direction, tag, score = "BUY", "M1_IMPULSE_STRIKE_LONG", 86.0
+        direction, tag, score = "BUY", "M1_IMPULSE_STRIKE_LONG", 87.0
     elif trend_bear and c < swing_lo and c < o and bar_rng >= 0.80 * m1_atr and (body / bar_rng) >= 0.58:
-        direction, tag, score = "SELL", "M1_IMPULSE_STRIKE_SHORT", 86.0
+        direction, tag, score = "SELL", "M1_IMPULSE_STRIKE_SHORT", 87.0
+
+    # Priority 2: Sub-Minute Intra-Bar Tick-Velocity Breakout (anti-chase window: 0.70x - 1.75x M1_ATR)
+    elif (
+        trend_bull
+        and cur_c > (swing_hi + 0.15 * m1_atr)
+        and cur_c > cur_o
+        and (0.70 * m1_atr <= cur_rng <= 1.75 * m1_atr)
+        and (cur_body / cur_rng) >= 0.65
+    ):
+        direction, tag, score = "BUY", "M1_TICK_VELOCITY_LONG", 88.0
+        gate_low, gate_high = cur_l, cur_h
+    elif (
+        trend_bear
+        and cur_c < (swing_lo - 0.15 * m1_atr)
+        and cur_c < cur_o
+        and (0.70 * m1_atr <= cur_rng <= 1.75 * m1_atr)
+        and (cur_body / cur_rng) >= 0.65
+    ):
+        direction, tag, score = "SELL", "M1_TICK_VELOCITY_SHORT", 88.0
+        gate_low, gate_high = cur_l, cur_h
 
     if not direction:
         return None
 
     # Tight micro-scalp stop distance (1.65x M1 ATR, floored at 4.5x spread)
     sl_dist = round(max(1.65 * m1_atr, 4.5 * sp_px), digits)
-    entry = round(closes[-1] + sp_px, digits) if direction == "BUY" else round(closes[-1], digits)
+    entry = round(cur_c + sp_px, digits) if direction == "BUY" else round(cur_c, digits)
     sl = round(entry - sl_dist, digits) if direction == "BUY" else round(entry + sl_dist, digits)
     tp = round(entry + 1.65 * sl_dist, digits) if direction == "BUY" else round(entry - 1.65 * sl_dist, digits)
 
@@ -511,7 +538,7 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
     if vp_lot <= 0.0 or vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.35):
         return None
 
-    htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, direction, entry, l, h, htf_ctx)
+    htf_ok, htf_tag_override = passes_htf_liquidity_gate(sleeve_key, direction, entry, gate_low, gate_high, htf_ctx)
     if not htf_ok:
         return None
 
@@ -635,7 +662,7 @@ def run_worker(sleeve_key: str):
         logging.error(f"[{sleeve_key}] MT5 init failed on {cfg['path']}: {mt5.last_error()}")
         sys.exit(1)
 
-    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v12.0 NEXT-GEN M1/M15 MICRO-SCALPER ONLINE on #{cfg['login']}")
+    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v12.1 M1/M15 + TICK-VELOCITY MICRO-SCALPER ONLINE on #{cfg['login']}")
     last_bar_traded = {}
     tracked_pending_tickets = {}  # order_ticket -> dict metadata
     announced_open_tickets = set()
