@@ -1,4 +1,6 @@
 {
-  "rollover_active": false,
-  "last_checked_utc": "2026-11-13T15:40:36.871228+00:00"
+  "timestamp": "2026-11-18T07:48:06.111303+00:00",
+  "is_rollover_window": false,
+  "spread_warnings": [],
+  "trading_permitted": true
 }

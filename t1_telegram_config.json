@@ -1,10 +1,10 @@
 {
     "bot_name": "Quant Alert Bot",
-    "": "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw",
-    "account_login": 278061453,
+    "": "YOUR_QUANT_ALERT_BOT_TOKEN_HERE",
+    "account_login": 278062038,
     "authorized_chat_id": "5279761713",
     "chat_id": "5279761713",
     "terminal_id": "T1",
-    "token": "8883861115:AAFAUqBcKSYjrIgo-Spoc5WuqSONeITx6Yw",
+    "token": "YOUR_QUANT_ALERT_BOT_TOKEN_HERE",
     "server": "Exness-MT5Trial5"
 }

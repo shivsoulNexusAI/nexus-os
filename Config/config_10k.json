@@ -1,5 +1,5 @@
-{
-  "bot_token": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",,
+﻿{
+  "bot_token": "8578781048:AAHCDrhqtH6gwcm1R3YZvNIu9zvAPM5Y5xU",
   "authorized_uid": 5279761713,
   "mt5_account": 278007825,
   "mt5_server": "Exness-MT5Trial5",
@@ -10,3 +10,4 @@
   "max_concurrent_slots": 2,
   "max_daily_drawdown_pct": 0.04
 }
+

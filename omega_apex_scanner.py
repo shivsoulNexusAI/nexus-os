@@ -200,6 +200,7 @@ def run_scanner_cycle():
         )
 
     alpha_status = " | ".join(triggers) if triggers else "Matrix Balanced | Awaiting Edge"
+    alpha_status = " | ".join(triggers) if triggers else "Matrix Balanced | Awaiting Edge"
     now_utc = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
 
     if positions:

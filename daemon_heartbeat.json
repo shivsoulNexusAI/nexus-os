@@ -1,18 +1,53 @@
 {
-  "timestamp": 1794757271.305822,
-  "utc_iso": "2026-11-15T15:41:11.305822+00:00",
+  "timestamp": 1794987724.5388944,
+  "utc_iso": "2026-11-18T07:42:04.538894+00:00",
   "status": "ONLINE_V3_V44_CERTIFIED",
-  "terminal": "278041169",
-  "equity": 0.0,
+  "terminal": "278062039",
+  "equity": 963.4,
   "open_positions": 0,
   "pending_orders": 0,
   "fusion": {
     "BTCUSD": {
-      "ml_p": 0.027,
-      "delta_pct": -12.9,
+      "ml_p": 0.026,
+      "delta_pct": 23.6,
       "kz": 1,
       "box_ready": false,
       "h1_dir": 0
+    },
+    "XAUUSD": {
+      "ml_p": 0.599,
+      "delta_pct": -10.6,
+      "kz": 1,
+      "box_ready": false,
+      "h1_dir": -1
+    },
+    "US30": {
+      "ml_p": 0.199,
+      "delta_pct": -35.1,
+      "kz": 1,
+      "box_ready": true,
+      "h1_dir": -1
+    },
+    "EURUSD": {
+      "ml_p": 0.557,
+      "delta_pct": 18.8,
+      "kz": 1,
+      "box_ready": false,
+      "h1_dir": -1
+    },
+    "GBPUSD": {
+      "ml_p": 0.657,
+      "delta_pct": -3.7,
+      "kz": 1,
+      "box_ready": true,
+      "h1_dir": -1
+    },
+    "USDJPY": {
+      "ml_p": 0.586,
+      "delta_pct": -62.8,
+      "kz": 1,
+      "box_ready": false,
+      "h1_dir": -1
     }
   }
 }

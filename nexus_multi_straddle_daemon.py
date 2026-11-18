@@ -1,3 +1,4 @@
+import pickle
 # -*- coding: utf-8 -*-
 """
 QUANT-NEXUS MULTI-STRADDLE DAEMON (V3.0 + V4.4 CERTIFIED PRODUCTION FUSION)
@@ -22,6 +23,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import MetaTrader5 as mt5
+from telegram_notifier_v43 import send_v43_alert
 
 try:
     import mss_matrix
@@ -48,6 +50,18 @@ HARVEST_STATE_PATH = r"C:\Quant-Nexus-Eng\v3_position_harvest_state.json"
 LOG_FILE = r"C:\Quant-Nexus-Eng\nexus_multi_straddle.log"
 
 SYMBOLS = ["BTCUSD", "XAUUSD", "US30", "EURUSD", "GBPUSD", "USDJPY"]
+
+# Calibrated Regime ML Decision Hurdles by Asset Profile
+ASSET_THRESHOLDS = {
+    "EURUSD": 0.70,
+    "GBPUSD": 0.70,
+    "USDJPY": 0.65,
+    "US30":   0.68,
+    "XAUUSD": 0.72,
+    "BTCUSD": 0.72
+}
+DEFAULT_THRESHOLD = 0.65
+
 ML_GATE_DEFAULT = 0.42
 BASE_RISK_PCT = 0.0065  # Half-Kelly calibrated for <= 3.0% P95 Monte Carlo DD
 POLL_INTERVAL = 30
@@ -432,7 +446,7 @@ class CertifiedV3V44Engine:
 
         # Purge all pending orders on Friday >= 20:00 UTC or when opposite leg filled
         pos_syms = {p.symbol for p in positions}
-        now_ts = int(time.time())
+        ref_tick = mt5.symbol_info_tick('EURUSD'); now_ts = int(ref_tick.time) if ref_tick else int(time.time())
         for o in orders:
             if o.magic != MAGIC_NUMBER:
                 continue
@@ -465,6 +479,7 @@ class CertifiedV3V44Engine:
         in_killzone = (7 <= now_utc.hour <= 15) and not (now_utc.weekday() == 4 and now_utc.hour >= 20)
 
         for sym in SYMBOLS:
+            thresh = ASSET_THRESHOLDS.get(sym, DEFAULT_THRESHOLD)
             try:
                 tick = mt5.symbol_info_tick(sym)
                 info = mt5.symbol_info(sym)

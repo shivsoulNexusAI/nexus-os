@@ -1,18 +1,18 @@
 {
-  "timestamp": "2026-11-15T12:00:03.786032+00:00",
-  "account": 278041169,
+  "timestamp": "2026-11-18T07:41:56.382076+00:00",
+  "account": 278062039,
   "sample_trades": 42,
   "tier1_reshuffle": {
     "passed": true,
-    "p95_dd": 7.038495783705159
+    "p95_dd": 7.085325894643197
   },
   "tier2_resample": {
     "passed": true,
-    "p95_dd": 8.323897953395633
+    "p95_dd": 8.398319320619537
   },
   "tier3_randomize": {
     "passed": true,
-    "p5_pf": 2.779617300724637,
+    "p5_pf": 2.7808899456521736,
     "survival_pct": 100.0
   },
   "production_ready": true

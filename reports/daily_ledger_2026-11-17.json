@@ -1,0 +1,35 @@
+{
+  "date": "2026-11-17",
+  "total_realized_pnl": -2.44,
+  "closed_deals": 4,
+  "wins": 2,
+  "losses": 2,
+  "win_rate": 50.0,
+  "deals": [
+    {
+      "ticket": 2303792650,
+      "symbol": "BTCUSD",
+      "profit": 0.71,
+      "time": 1794879721
+    },
+    {
+      "ticket": 2304534546,
+      "symbol": "BTCUSD",
+      "profit": 0.73,
+      "time": 1794885533
+    },
+    {
+      "ticket": 2306661446,
+      "symbol": "BTCUSD",
+      "profit": -3.79,
+      "time": 1794915596
+    },
+    {
+      "ticket": 2309405141,
+      "symbol": "BTCUSD",
+      "profit": -0.09,
+      "time": 1794935222
+    }
+  ],
+  "archived_at_utc": "2026-11-18T07:50:23.389115+00:00"
+}

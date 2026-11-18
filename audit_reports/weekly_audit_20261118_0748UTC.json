@@ -1,0 +1,84 @@
+{
+  "period": "Nov 11 -> Nov 18, 2026",
+  "net_pnl": -61.6,
+  "profit_factor": 0.37,
+  "win_rate": 42.9,
+  "avg_slippage_pts": 0.0,
+  "avg_latency_ms": 0.0,
+  "assets": {
+    "BTCUSD": {
+      "trades": 7,
+      "wins": 3,
+      "pnl": -5.17,
+      "gp": 5.720000000000001,
+      "gl": 10.89
+    },
+    "GBPUSD": {
+      "trades": 3,
+      "wins": 1,
+      "pnl": -5.71,
+      "gp": 6.35,
+      "gl": 12.059999999999999
+    },
+    "EURUSD": {
+      "trades": 3,
+      "wins": 0,
+      "pnl": -18.919999999999998,
+      "gp": 0.0,
+      "gl": 18.919999999999998
+    },
+    "GBPJPY": {
+      "trades": 6,
+      "wins": 2,
+      "pnl": -13.37,
+      "gp": 11.13,
+      "gl": 24.5
+    },
+    "AUDUSD": {
+      "trades": 3,
+      "wins": 3,
+      "pnl": 7.26,
+      "gp": 7.26,
+      "gl": 0.0
+    },
+    "USDJPY": {
+      "trades": 1,
+      "wins": 0,
+      "pnl": -6.45,
+      "gp": 0.0,
+      "gl": 6.45
+    },
+    "USDCAD": {
+      "trades": 1,
+      "wins": 1,
+      "pnl": 0.59,
+      "gp": 0.59,
+      "gl": 0.0
+    },
+    "XAUUSD": {
+      "trades": 4,
+      "wins": 2,
+      "pnl": -19.830000000000002,
+      "gp": 5.51,
+      "gl": 25.340000000000003
+    }
+  },
+  "sessions": {
+    "London KZ": {
+      "trades": 9,
+      "pnl": -30.36
+    },
+    "NY-LDN Ovlp": {
+      "trades": 7,
+      "pnl": -10.95
+    },
+    "Asia KZ": {
+      "trades": 7,
+      "pnl": -9.350000000000001
+    },
+    "Off-Peak": {
+      "trades": 5,
+      "pnl": -10.940000000000001
+    }
+  }
+}

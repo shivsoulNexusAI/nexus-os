@@ -56,7 +56,7 @@ ATR_PERIOD = 14
 MIN_ATR_NORMAL = 1.80      # Min $1.80 M5 range required
 MIN_ATR_ASIAN = 2.40       # Stricter $2.40 M5 range required during Asian session
 CHOP_THRESHOLD = 55.0         # Tighter chop filter (blocks quiet consolidation)      # CHOP >= 61.8 indicates consolidation chop (freeze straddle)
-STRADDLE_OFFSET_POINTS = 1500  # $1.50 dynamic breakout buffer # 15 pips ($1.50)
+STRADDLE_OFFSET_POINTS = 1500  # $1.50 dynamic breakout buffer0  # $1.50 dynamic breakout buffer # 15 pips ($1.50)
 SL_POINTS = 2000              # $2.00 stop loss (prevents spread chop)              # 12 pips ($1.20)
 TP_POINTS = 4500              # $4.50 target expansion (1:2.25 RR)              # 30 pips ($3.00)
 LOT_SIZE = 0.01

@@ -1,10 +1,10 @@
 {
-    "date": "2026-11-09",
-    "starting_balance": 988.78,
-    "peak_equity_hwm": 987.49,
-    "realized_daily_pnl": -1.29,
-    "circuit_breaker_tripped": false,
-    "lockout_reason": "",
-    "last_deal_ticket": 2254331053,
-    "last_updated": 1794183326.3484447
+  "circuit_breaker_tripped": true,
+  "daily_loss_pct": 4.25,
+  "peak_balance": 3102.93,
+  "current_balance": 3102.93,
+  "drawdown_threshold": 5.0,
+  "consecutive_losses": 0,
+  "active_circuit_reason": "SIMULATED_MAX_DRAWDOWN_BREACH_TEST",
+  "last_updated_utc": "2026-11-18T07:48:31.556721+00:00"
 }

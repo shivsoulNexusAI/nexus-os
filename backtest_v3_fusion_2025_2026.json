@@ -1,23 +1,23 @@
 {
   "period": "2025-01-01 to 2026-11-13",
-  "oos_ml_auc": 0.7174,
+  "oos_ml_auc": 0.7156,
   "initial_balance": 1000.0,
-  "final_equity": 7112.57,
-  "net_pnl_usd": 6112.57,
-  "total_return_pct": 611.26,
-  "portfolio_trades": 373,
-  "win_rate_pct": 68.1,
-  "profit_factor": 5.16,
-  "max_drawdown_pct": 2.37,
-  "pnl_2025_usd": 2382.06,
-  "pnl_2026_ytd_usd": 3730.51,
+  "final_equity": 7179.49,
+  "net_pnl_usd": 6179.49,
+  "total_return_pct": 617.95,
+  "portfolio_trades": 369,
+  "win_rate_pct": 69.92,
+  "profit_factor": 5.58,
+  "max_drawdown_pct": 2.16,
+  "pnl_2025_usd": 2352.35,
+  "pnl_2026_ytd_usd": 3827.14,
   "per_symbol": {
     "BTCUSD": {
-      "trades": 42,
-      "t2_harvests": 24,
-      "win_rate_pct": 71.4,
-      "profit_factor": 4.42,
-      "net_pnl_usd": 699.79
+      "trades": 41,
+      "t2_harvests": 23,
+      "win_rate_pct": 70.7,
+      "profit_factor": 3.8,
+      "net_pnl_usd": 573.63
     },
     "XAUUSD": {
       "trades": 42,
@@ -27,33 +27,33 @@
       "net_pnl_usd": 702.21
     },
     "US30": {
-      "trades": 153,
-      "t2_harvests": 96,
-      "win_rate_pct": 67.3,
-      "profit_factor": 5.93,
-      "net_pnl_usd": 2465.14
+      "trades": 152,
+      "t2_harvests": 99,
+      "win_rate_pct": 71.1,
+      "profit_factor": 7.31,
+      "net_pnl_usd": 2618.35
     },
     "EURUSD": {
-      "trades": 56,
-      "t2_harvests": 33,
-      "win_rate_pct": 62.5,
-      "profit_factor": 4.77,
-      "net_pnl_usd": 906.62
+      "trades": 53,
+      "t2_harvests": 32,
+      "win_rate_pct": 64.2,
+      "profit_factor": 5.42,
+      "net_pnl_usd": 912.39
     },
     "GBPUSD": {
-      "trades": 66,
-      "t2_harvests": 40,
-      "win_rate_pct": 65.2,
-      "profit_factor": 4.54,
-      "net_pnl_usd": 1204.61
+      "trades": 67,
+      "t2_harvests": 41,
+      "win_rate_pct": 65.7,
+      "profit_factor": 4.65,
+      "net_pnl_usd": 1240.58
     },
     "USDJPY": {
       "trades": 14,
       "t2_harvests": 8,
       "win_rate_pct": 71.4,
-      "profit_factor": 3.9,
-      "net_pnl_usd": 134.2
+      "profit_factor": 3.84,
+      "net_pnl_usd": 132.34
     }
   },
-  "elapsed_sec": 24.25
+  "elapsed_sec": 31.0
 }

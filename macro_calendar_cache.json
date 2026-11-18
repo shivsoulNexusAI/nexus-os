@@ -1,35 +1,41 @@
 {
-    "last_fetched": "2026-11-12T07:00:02.724124+00:00",
-    "events": [
-        {
-            "title": "Core CPI m/m",
-            "currency": "USD",
-            "impact": "High",
-            "date": "2026-11-10T08:30:00-05:00"
-        },
-        {
-            "title": "CPI m/m",
-            "currency": "USD",
-            "impact": "High",
-            "date": "2026-11-10T08:30:00-05:00"
-        },
-        {
-            "title": "GDP m/m",
-            "currency": "GBP",
-            "impact": "High",
-            "date": "2026-11-12T02:00:00-05:00"
-        },
-        {
-            "title": "Core PPI m/m",
-            "currency": "USD",
-            "impact": "High",
-            "date": "2026-11-13T08:30:00-05:00"
-        },
-        {
-            "title": "PPI m/m",
-            "currency": "USD",
-            "impact": "High",
-            "date": "2026-11-13T08:30:00-05:00"
-        }
-    ]
+  "last_fetched": "2026-11-18T07:32:43.726199+00:00",
+  "events": [
+    {
+      "title": "Fed Chairman Warsh Speaks",
+      "currency": "USD",
+      "impact": "High",
+      "date": "2026-11-16T12:00:00-05:00"
+    },
+    {
+      "title": "Core Retail Sales m/m",
+      "currency": "USD",
+      "impact": "High",
+      "date": "2026-11-17T08:30:00-05:00"
+    },
+    {
+      "title": "Retail Sales m/m",
+      "currency": "USD",
+      "impact": "High",
+      "date": "2026-11-17T08:30:00-05:00"
+    },
+    {
+      "title": "CPI y/y",
+      "currency": "GBP",
+      "impact": "High",
+      "date": "2026-11-18T02:00:00-05:00"
+    },
+    {
+      "title": "BOE Gov Bailey Speaks",
+      "currency": "GBP",
+      "impact": "High",
+      "date": "2026-11-18T10:00:00-05:00"
+    },
+    {
+      "title": "FOMC Meeting Minutes",
+      "currency": "USD",
+      "impact": "High",
+      "date": "2026-11-18T14:00:00-05:00"
+    }
+  ]
 }
