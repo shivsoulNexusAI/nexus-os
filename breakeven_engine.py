@@ -267,6 +267,7 @@ def audit_silo(silo):
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                     scaled_tickets.add(ticket)
+                    save_state()
                     dirty = True
                     rem_vol = round(volume - half_vol, 2)
                     log.info("[TIER 2 HARVEST] %s #%s (%s) banked 50%% (%.2fL) at +%.2fR", silo["name"], ticket, sym, half_vol, r_mult)
