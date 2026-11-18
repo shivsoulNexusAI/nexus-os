@@ -188,8 +188,21 @@ def purge_nexus_pending_orders(sleeve_key: str, reason: str = "OCO_CLEANUP"):
             if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                 logging.info(f"[{sleeve_key}] Cancelled pending #{o.ticket} ({o.symbol}) -> {reason}")
 
-def evaluate_m5_setup(sleeve_key: str, symbol: str, rates, sym_info) -> dict | None:
-    """v10.10 Production M15-Regime + Spread-Efficiency + Pruned Roster Evaluator."""
+def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict | None:
+    """v10.10 Production M15-Regime + Spread-Efficiency + Pruned Roster Evaluator (Flexible Caller Signature)."""
+    if arg1 in ("T1", "T2", "T3") and isinstance(arg2, str):
+        sleeve_key = arg1
+        symbol = arg2
+    else:
+        symbol = arg1
+        sleeve_key = "T3" if "XAU" in symbol.upper() else ("T2" if any(fx in symbol.upper() for fx in ("EUR", "GBP", "JPY", "AUD")) else "T1")
+
+    if sym_info is None:
+        sym_info = mt5.symbol_info(symbol)
+    if sym_info is None:
+        return None
+    if rates is None:
+        rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 200)
     if rates is None or len(rates) < 160:
         return None
 
@@ -665,6 +678,8 @@ if __name__ == "__main__":
         print("Usage: python nexus_sleeve_worker.py <T1|T2|T3>")
         sys.exit(1)
     run_worker(sys.argv[1].upper())
+
+
 
 
 
