@@ -1,4 +1,4 @@
-﻿import json
+import json
 from pathlib import Path
 
 config_path = Path(r"C:\Quant-Nexus-Eng\t1_telegram_config.json")

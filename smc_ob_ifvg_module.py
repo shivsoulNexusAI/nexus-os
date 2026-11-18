@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 def detect_smc_ob_ifvg(
     opens: np.ndarray,

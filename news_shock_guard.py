@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QuantNexus Mission Bravo: High-Impact Macro Economic News Sentinel
 Polls economic calendar feeds for Red-Folder events across USD, EUR, GBP, JPY.

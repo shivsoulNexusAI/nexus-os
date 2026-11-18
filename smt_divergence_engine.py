@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus V3.1 - Cross-Asset SMT Divergence Engine
 """
 import MetaTrader5 as mt5

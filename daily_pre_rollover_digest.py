@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS DAILY PRE-ROLLOVER PNL & PROFIT FACTOR DIGEST (21:40 UTC)
 Audits Silo 1 (#278062038), Silo 2 (#278062039), and Silo 3 (#278062042)

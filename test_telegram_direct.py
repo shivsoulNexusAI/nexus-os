@@ -1,4 +1,4 @@
-﻿"""
+"""
 SHIVSOUL NEXUS // TELEGRAM DIRECT API CONNECTION TEST
 - Verifies bot token authentication and tests dispatch payload delivery.
 """

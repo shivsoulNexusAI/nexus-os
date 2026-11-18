@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus Signal Synthesis & Composite Edge Scoring Engine
 Analyzes MSS, FVGs, and SMT Correlated Divergences across M5/M15 microstructures.
 Outputs normalized Edge Confluence Score (0 - 100).

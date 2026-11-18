@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 import MetaTrader5 as mt5
 
 BASE_DIR = Path(r"C:\Quant-Nexus-Eng")

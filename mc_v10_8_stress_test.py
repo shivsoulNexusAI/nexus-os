@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS v10.8 MONTE CARLO DRAWDOWN & TAIL-RISK STRESS TEST (1,000 ITERATIONS)
 Evaluates pruned positive-expectancy roster:

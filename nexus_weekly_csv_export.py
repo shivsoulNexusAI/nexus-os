@@ -1,4 +1,4 @@
-﻿import os
+import os
 import csv
 from datetime import datetime, timezone, timedelta
 import MetaTrader5 as mt5

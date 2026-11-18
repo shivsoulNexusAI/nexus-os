@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus V3.1 Unified Master Orchestrator (Terminal 1 Golden Master)
 =====================================================================
 Consolidates:

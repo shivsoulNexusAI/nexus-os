@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 NEXUS OMEGA APEX FINAL PRODUCTION DAEMON (v44.2 Multi-Terminal)
 - CLI Isolated: --terminal, --portable, --magic, --tag

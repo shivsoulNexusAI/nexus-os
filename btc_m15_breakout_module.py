@@ -1,4 +1,4 @@
-﻿import numpy as np
+import numpy as np
 
 def detect_btc_m15_breakout(
     o15: np.ndarray,

@@ -1,4 +1,4 @@
-﻿from pathlib import Path
+from pathlib import Path
 
 p = Path(r"C:\Quant-Nexus-Eng\nexus_ship_core.py")
 code = p.read_text(encoding="utf-8")

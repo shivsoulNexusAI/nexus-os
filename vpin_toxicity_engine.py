@@ -1,4 +1,4 @@
-﻿"""
+"""
 QuantNexus V3.1 - VPIN & Microstructure Toxicity Engine
 """
 import numpy as np

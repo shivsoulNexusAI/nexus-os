@@ -1,4 +1,4 @@
-﻿"""
+"""
 SHIVSOUL NEXUS // QUANTUM-INSPIRED STATE-SPACE ANNEALER (v9.0+)
 - Optimizes multi-sleeve capital allocation (T1, T2, T3) using 
   quantum-inspired annealing over real-time microstructural state vectors.

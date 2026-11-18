@@ -1,4 +1,4 @@
-﻿"""
+"""
 SHIVSOUL NEXUS v9.0 // FLEET SUPERVISOR DAEMON WITH QUANTUM ANNEALING INTEGRATION
 - Monitors multi-sleeve workers (T1, T2, T3) with sub-second heartbeat latencies.
 - Integrates QuantumStateAnnealer to dynamically adjust sleeve capital weights based on live microstructural telemetry.

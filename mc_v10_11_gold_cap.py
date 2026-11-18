@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 import backtest_v10_8_2025_2026 as bt
 import mc_v10_9_stress_test as mc9
 

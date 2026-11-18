@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS REAL-TIME TELEGRAM DEAL WATCHER (HEADLESS DAEMON)
 Polls MT5 closed deals every 10 seconds and dispatches instant alerts.

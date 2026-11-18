@@ -1,4 +1,4 @@
-﻿import MetaTrader5 as mt5
+import MetaTrader5 as mt5
 from datetime import datetime, timezone
 from nexus_ship_core import SLEEVES
 from macro_gate import MacroGateController

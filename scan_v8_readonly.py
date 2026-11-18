@@ -1,4 +1,4 @@
-﻿"""
+"""
 SHIVSOUL NEXUS v9.0 // READ-ONLY DIAGNOSTIC SCANNER
 - Inspects live v9.0 scores, ICT structure tags, Kalman-OU regimes,
   directional VPIN, T1 Funding-Rate Toxicity, and T3 Stop-Hunt Sweep Status.

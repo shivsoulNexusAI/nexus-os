@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS v10.6 + V2.1 HYBRID M5 SCALPER BACKTESTER (2025-01-01 to 2026-11-18)
 Pulls real M5 historical bars from T1, T2, and T3 MT5 terminals and simulates:

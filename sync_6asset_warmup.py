@@ -1,4 +1,4 @@
-﻿import re
+import re
 import time
 from pathlib import Path
 import MetaTrader5 as mt5

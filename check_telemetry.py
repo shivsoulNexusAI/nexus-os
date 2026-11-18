@@ -1,4 +1,4 @@
-﻿import sqlite3
+import sqlite3
 
 def check_telemetry():
     conn = sqlite3.connect("nexus_ledger.db")

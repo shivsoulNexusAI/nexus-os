@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import os
 import zmq
 import json

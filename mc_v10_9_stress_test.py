@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS v10.9 RISK-NORMALIZED MONTE CARLO STRESS TEST (1,000 ITERATIONS)
 Applies:

@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 QUANT-NEXUS v10.10 PRODUCTION MONTE CARLO STRESS TEST (1,000 ITERATIONS)
 Exact v10.10 parameters:

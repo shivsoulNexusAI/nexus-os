@@ -1,4 +1,4 @@
-﻿"""
+"""
 SHIVSOUL NEXUS v9.0 // COMPREHENSIVE BACKTEST ENGINE (2025-2026)
 - Evaluates v9.0 specialized filters across T1 (BTC), T2 (FX), and T3 (XAU).
 - Generates performance audit CSV in reports\backtest_v9_2025_2026.csv.

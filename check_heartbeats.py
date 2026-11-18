@@ -1,4 +1,4 @@
-﻿import sqlite3
+import sqlite3
 
 def audit_heartbeats_and_positions():
     conn = sqlite3.connect("nexus_ledger.db")

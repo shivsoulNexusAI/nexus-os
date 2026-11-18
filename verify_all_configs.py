@@ -1,4 +1,4 @@
-﻿import json
+import json
 from pathlib import Path
 
 BASE_DIR = Path(r"C:\Quant-Nexus-Eng")
