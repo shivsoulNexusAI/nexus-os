@@ -216,7 +216,7 @@ def audit_silo(silo):
         r_mult = gain / initial_risk if initial_risk > 0 else 0.0
 
         # === TIER 1: BREAKEVEN LOCK AT +0.65R (Locks +0.20R cushion) ===
-        if r_mult >= 0.65:
+        if r_mult >= 0.95:
             be_cushion = max(spread_pad, 0.18 * initial_risk)
             target_be_sl = round(open_price + be_cushion if is_buy else open_price - be_cushion, digits)
             eps = 0.5 * point
@@ -233,7 +233,7 @@ def audit_silo(silo):
                     "tp": p.tp
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    log.info("[TIER 1 +0.65R BE-LOCK] %s #%s (%s) at +%.2fR -> SL locked at %s", silo["name"], ticket, sym, r_mult, target_be_sl)
+                    log.info("[TIER 1 +0.95R BE-LOCK] %s #%s (%s) at +%.2fR -> SL locked at %s", silo["name"], ticket, sym, r_mult, target_be_sl)
                     send_be_tg(
                         f"🛡️ <b>[NEXUS BE V2.1 // +0.65R BREAKEVEN LOCK]</b>\n"
                         f"• Silo: <b>{silo['name']}</b> (<code>#{login}</code>)\n"
@@ -244,7 +244,7 @@ def audit_silo(silo):
                     sl = target_be_sl
 
         # === TIER 2: 50% PARTIAL HARVEST AT +1.15R (Positions >= 0.02 lots) ===
-        if r_mult >= 1.15 and ticket not in scaled_tickets:
+        if r_mult >= 1.25 and ticket not in scaled_tickets:
             step = sym_info.volume_step
             min_lot = sym_info.volume_min
             half_vol = round(math.floor((volume / 2.0) / step) * step, 2)
@@ -280,7 +280,7 @@ def audit_silo(silo):
                     )
 
         # === TIER 3: M1 MICRO-SWING TRAILING STOP (Activates >= +1.50R) ===
-        if r_mult >= 1.05:
+        if r_mult >= 1.35:
             rates = mt5.copy_rates_from_pos(sym, mt5.TIMEFRAME_M1, 1, 2)
             if rates is not None and len(rates) >= 2:
                 proposed_sl = None

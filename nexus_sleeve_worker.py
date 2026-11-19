@@ -535,6 +535,8 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
     tp = round(entry + 1.65 * sl_dist, digits) if direction == "BUY" else round(entry - 1.65 * sl_dist, digits)
 
     vp_lot, vp_risk = compute_volatility_parity_lot(sleeve_key, symbol, entry, sl, sym_info)
+    if 'XAU' in symbol.upper() and vp_lot > 0.01:
+        vp_lot = 0.01
     if vp_lot <= 0.0 or vp_risk > (V11_RISK_BUDGET_USD.get(sleeve_key, 4.50) * 1.35):
         return None
 
