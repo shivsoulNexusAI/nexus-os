@@ -1,17 +1,23 @@
 {
-    "active_alias": "t1_institutional",
-    "accounts": {
-        "main": {
-            "name": "Exness Main (.5K)",
-            "login": 278007825,
-            "password": "H@ngkook3695",
-            "server": "Exness-MT5Trial5"
-        },
-        "t1_institutional": {
-            "name": "Exness T1 Institutional + BTC",
-            "login": 278062038,
-            "password": "H@ngkook3695",
-            "server": "Exness-MT5Trial5"
-        }
+  "active_alias": "t1_institutional",
+  "accounts": {
+    "main": {
+      "name": "Exness Main (.5K)",
+      "login": 278007825,
+      "password": "H@ngkook3695",
+      "server": "Exness-MT5Trial5"
+    },
+    "t1_institutional": {
+      "name": "Exness T1 Institutional + BTC",
+      "login": 278062038,
+      "password": "H@ngkook3695",
+      "server": "Exness-MT5Trial5"
+    },
+    "t4_sovereign": {
+      "name": "Exness T4 Sovereign Apex (XAU/BTC/EUR)",
+      "login": 278071462,
+      "password": "H@ngkook3695",
+      "server": "Exness-MT5Trial5"
     }
+  }
 }
