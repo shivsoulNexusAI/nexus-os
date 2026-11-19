@@ -672,7 +672,7 @@ def run_worker(sleeve_key: str):
     consecutive_errors = 0
     dd_halt_alerted_date = None
     tracked_utc_day = None
-    daily_dd_floor = round(equity * 0.96, 2)
+    daily_dd_floor = round(float(getattr(mt5.account_info(), 'equity', 0.0)) * 0.96, 2)
 
     while True:
         try:
