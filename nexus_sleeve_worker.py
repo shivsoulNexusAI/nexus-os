@@ -670,7 +670,7 @@ def run_worker(sleeve_key: str):
     consecutive_errors = 0
     dd_halt_alerted_date = None
     tracked_utc_day = None
-    daily_dd_floor = round(baseline_eq * 0.96, 2)
+    daily_dd_floor = round(equity * 0.96, 2)
 
     while True:
         try:
@@ -717,8 +717,8 @@ def run_worker(sleeve_key: str):
             if tracked_utc_day != today_str:
                 tracked_utc_day = today_str
                 # Preserve T2 halt through 2026-11-18 UTC; otherwise set floor at 96.0% of session start equity
-                if sleeve_key == "T2" and today_str == "2026-11-18" and equity < round(baseline_eq * 0.96, 2):
-                    daily_dd_floor = round(baseline_eq * 0.96, 2)
+                if sleeve_key == "T2" and today_str == "2026-11-18" and equity < round(equity * 0.96, 2):
+                    daily_dd_floor = round(equity * 0.96, 2)
                 else:
                     daily_dd_floor = round(equity * 0.96, 2)
                 logging.info(f"[{sleeve_key}] UTC Day {today_str} Baseline Equity=${equity:.2f} | 4.0% DD Floor=${daily_dd_floor:.2f}")
