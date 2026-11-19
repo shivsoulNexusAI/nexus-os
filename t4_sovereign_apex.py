@@ -1,16 +1,19 @@
 """
-QUANT-NEXUS TERMINAL 4 (T4) // VERIFIED 11/04/2026 SOVEREIGN NEXUS REPLICA (#278060961)
-Exact Forensic Parity Build:
-- SCAN_SYMBOLS = ["BTCUSD", "ETHUSD", "XAUUSD", "EURUSD", "GBPUSD"]
-- 60-Second Multi-Asset Confluence Sweep (TIMEFRAME_M15, 100 bars, EMA 9/21/50 + RSI14 + 10-bar Breakout >= 80.0)
-- Exact Calibrated Router Offsets (sl_offset / tp1_offset) + 1.0% Equity-Parity Risk Sizing
-- Exact Deal Fingerprint from #278060961 History: magic=999888, comment="Nexus Autonomous"
-- 4-Stage Autonomous Lifecycle: 1.0x M15 ATR BE (+2 pips) -> 1.2x ATR 50% Harvest -> 1.5x ATR Chandelier -> 4h/8h Decay
+QUANT-NEXUS TERMINAL 4 (T4) // EXACT 11/16/2026 LAPTOP MASTER ENGINE (#278060961)
+100% Verbatim Port of core/telegram_interactive.py (11/16/2026) + core/stacking_engine.py (11/04/2026):
+- Assets: ["EURUSD", "BTCUSD", "XAUUSD", "GBPUSD", "USDJPY"]
+- 15-Second Continuous Multi-Asset Scan Loop
+- Exact M15 MA10 Imbalance Model: raw_delta = (curr_close - ma10) / ma10 (> +/- 0.0003)
+- Exact Edge Formula: min(96, int(65 + abs(raw_delta) * 8000)) >= 72
+- Exact Spread-Multiple SL/TP: SL = spread * 30 | TP = spread * 65
+- Exact Lot Sizing: round(max(0.01, min(5.0, (equity * 0.01) / 300)), 2) (BTC 0.50L with margin-safe cap)
+- Exact Fingerprint: magic=999888, comment="Nexus Autonomous"
+- Pillar 1 Asymmetric Invalidation Stacker (0.5x M5 swing add-on at >= +1.2R BE) + -$300 Daily Circuit Breaker
 """
 import os
 import sys
-import json
 import time
+import json
 import sqlite3
 import logging
 from datetime import datetime, timezone
@@ -22,30 +25,20 @@ LEDGER_DB = r"C:\Quant-Nexus-Eng\nexus_ledger.db"
 STATE_FILE = r"C:\Quant-Nexus-Eng\t4_sovereign_state.json"
 LOG_FILE = r"C:\Quant-Nexus-Eng\logs\t4_sovereign_apex.log"
 
-SCAN_SYMBOLS = ["BTCUSD", "ETHUSD", "XAUUSD", "EURUSD", "GBPUSD"]
-CONFLUENCE_GATE = 80.0
-RISK_PCT = 0.01
-SCAN_INTERVAL_SEC = 60.0
-MAGIC_SOVEREIGN = 999888
+ASSETS = ["EURUSD", "BTCUSD", "XAUUSD", "GBPUSD", "USDJPY"]
+MIN_EDGE = 72
+SCAN_INTERVAL_SEC = 15.0
+MAGIC_NEXUS = 999888
 ORDER_COMMENT = "Nexus Autonomous"
-HALF_LIFE_SEC = 14400     # 4 Hours
-TERMINAL_SEC = 28800      # 8 Hours
-
-ROUTER_PROFILES = {
-    "BTC": {"canonical": "BTCUSD", "name": "Bitcoin / U.S. Dollar", "digits": 2, "sl_offset": 280.0, "tp1_offset": 450.0, "tp2_offset": 950.0},
-    "ETH": {"canonical": "ETHUSD", "name": "Ethereum / U.S. Dollar", "digits": 2, "sl_offset": 18.0, "tp1_offset": 32.0, "tp2_offset": 65.0},
-    "XAU": {"canonical": "XAUUSD", "name": "Gold Spot / U.S. Dollar", "digits": 2, "sl_offset": 3.80, "tp1_offset": 6.50, "tp2_offset": 12.00},
-    "EUR": {"canonical": "EURUSD", "name": "Euro / U.S. Dollar", "digits": 5, "sl_offset": 0.00180, "tp1_offset": 0.00320, "tp2_offset": 0.00650},
-    "GBP": {"canonical": "GBPUSD", "name": "British Pound / U.S. Dollar", "digits": 5, "sl_offset": 0.00220, "tp1_offset": 0.00380, "tp2_offset": 0.00750},
-}
+DAILY_MAX_LOSS_LIMIT = -300.00
 
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [T4-SOVEREIGN-1104] %(levelname)s: %(message)s",
+    format="%(asctime)s [T4-NEXUS-1116] %(levelname)s: %(message)s",
     handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler(sys.stdout)],
 )
-log = logging.getLogger("T4_Sovereign_1104")
+log = logging.getLogger("T4_Nexus_1116")
 
 
 def load_state() -> dict:
@@ -55,174 +48,259 @@ def load_state() -> dict:
                 return json.load(f)
         except Exception:
             pass
-    return {"banked_tickets": [], "choked_tickets": []}
+    return {"banked_tickets": []}
 
 
 def save_state(state: dict):
     try:
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
-    except Exception as e:
-        log.warning(f"State save failed: {e}")
-
-
-def get_exact_broker_symbol(base_sym: str) -> str:
-    candidates = [base_sym, f"{base_sym}m", f"{base_sym}.s", f"{base_sym}c", f"{base_sym}raw", f"{base_sym}.a", f"{base_sym}_i"]
-    for s in candidates:
-        info = mt5.symbol_info(s)
-        if info is not None and not s.endswith("_x10"):
-            mt5.symbol_select(s, True)
-            return s
-    return base_sym
-
-
-def is_market_open(symbol: str) -> bool:
-    real_sym = get_exact_broker_symbol(symbol)
-    tick = mt5.symbol_info_tick(real_sym)
-    if not tick or tick.bid <= 0:
-        return False
-    if (time.time() - tick.time) > 86400:
-        return False
-    info = mt5.symbol_info(real_sym)
-    return bool(info and info.trade_mode in [mt5.SYMBOL_TRADE_EXECUTION_MARKET, mt5.SYMBOL_TRADE_MODE_FULL])
-
-
-def resolve_router(base_asset: str, real_sym: str) -> dict:
-    key = "BTC"
-    for k in ("BTC", "ETH", "XAU", "EUR", "GBP"):
-        if k in base_asset.upper():
-            key = k
-            break
-    prof = dict(ROUTER_PROFILES[key])
-    prof["base"] = key
-    prof["symbol"] = real_sym
-    info = mt5.symbol_info(real_sym)
-    if info:
-        prof["digits"] = info.digits
-    return prof
-
-
-def calc_ema(arr: np.ndarray, period: int) -> np.ndarray:
-    alpha = 2.0 / (period + 1.0)
-    out = [float(arr[0])]
-    for p in arr[1:]:
-        out.append(alpha * float(p) + (1.0 - alpha) * out[-1])
-    return np.array(out, dtype=float)
-
-
-def calculate_confluence_edge(symbol: str) -> dict:
-    """Exact 11/04/2026 sovereign_nexus.py TIMEFRAME_M15 100-bar Confluence Engine."""
-    real_sym = get_exact_broker_symbol(symbol)
-    tick = mt5.symbol_info_tick(real_sym)
-    spot_fallback = float(tick.bid) if tick else 0.0
-    fallback_data = {"score": 50.0, "bias": "NEUTRAL", "rsi": 50.0, "spot": spot_fallback, "status": "CONSOLIDATION"}
-
-    rates = mt5.copy_rates_from_pos(real_sym, mt5.TIMEFRAME_M15, 0, 100)
-    if rates is None or len(rates) < 50:
-        return fallback_data
-
-    try:
-        closes = np.array([r["close"] for r in rates], dtype=float)
-        highs = np.array([r["high"] for r in rates], dtype=float)
-        lows = np.array([r["low"] for r in rates], dtype=float)
-
-        ema9 = calc_ema(closes, 9)
-        ema21 = calc_ema(closes, 21)
-        ema50 = calc_ema(closes, 50)
-        curr_c = float(closes[-1])
-
-        deltas = np.diff(closes[-15:])
-        gains = np.where(deltas > 0, deltas, 0.0)
-        losses = np.where(deltas < 0, -deltas, 0.0)
-        avg_g = float(np.mean(gains)) if len(gains) > 0 else 0.0
-        avg_l = float(np.mean(losses)) if len(losses) > 0 else 0.0001
-        rs = avg_g / (avg_l if avg_l != 0 else 0.0001)
-        rsi = 100.0 - (100.0 / (1.0 + rs))
-
-        bull_pts = 0.0
-        bear_pts = 0.0
-
-        if ema9[-1] > ema21[-1] > ema50[-1]:
-            bull_pts += 30.0
-        elif ema9[-1] < ema21[-1] < ema50[-1]:
-            bear_pts += 30.0
-        elif ema9[-1] > ema21[-1]:
-            bull_pts += 15.0
-        elif ema9[-1] < ema21[-1]:
-            bear_pts += 15.0
-
-        if rsi < 32.0:
-            bull_pts += 35.0
-        elif rsi > 68.0:
-            bear_pts += 35.0
-        elif 40.0 <= rsi <= 55.0 and bull_pts > 0:
-            bull_pts += 20.0
-        elif 45.0 <= rsi <= 60.0 and bear_pts > 0:
-            bear_pts += 20.0
-
-        if curr_c > float(np.max(highs[-10:-1])):
-            bull_pts += 25.0
-        elif curr_c < float(np.min(lows[-10:-1])):
-            bear_pts += 25.0
-
-        if bull_pts > bear_pts:
-            final_score = min(96.5, round(50.0 + (bull_pts * 0.48), 1))
-            bias = "BUY" if final_score >= 65.0 else "NEUTRAL"
-        elif bear_pts > bull_pts:
-            final_score = min(96.5, round(50.0 + (bear_pts * 0.48), 1))
-            bias = "SELL" if final_score >= 65.0 else "NEUTRAL"
-        else:
-            final_score = 50.0
-            bias = "NEUTRAL"
-
-        spot = float(tick.ask) if (tick and bias == "BUY") else (float(tick.bid) if tick else curr_c)
-        return {
-            "score": final_score,
-            "bias": bias,
-            "rsi": round(rsi, 1),
-            "spot": spot,
-            "status": "ACTIVE" if final_score >= CONFLUENCE_GATE else "SCANNING",
-        }
     except Exception:
-        return fallback_data
+        pass
 
 
-def calculate_dynamic_risk_lot(equity: float, symbol: str, entry: float, sl: float, risk_pct: float = 0.01) -> dict:
-    info = mt5.symbol_info(symbol)
-    sl_dist = abs(entry - sl)
-    if not info or sl_dist <= 0 or info.trade_tick_size <= 0:
-        return {"lot": 0.01, "risk_usd": round(equity * risk_pct, 2)}
-    risk_cash = equity * risk_pct
-    ticks_at_risk = sl_dist / info.trade_tick_size
-    cash_per_lot = ticks_at_risk * info.trade_tick_value
-    if cash_per_lot <= 0:
-        return {"lot": info.volume_min, "risk_usd": round(risk_cash, 2)}
-    raw_lot = risk_cash / cash_per_lot
-    step = info.volume_step or 0.01
-    steps = round(raw_lot / step)
-    norm_lot = max(info.volume_min, min(info.volume_max, steps * step))
-    step_str = str(step)
-    vol_digits = len(step_str.split(".")[1]) if "." in step_str else 0
-    return {"lot": round(norm_lot, vol_digits), "risk_usd": round(risk_cash, 2)}
-
-
-def get_filling_mode(info) -> int:
-    if info.filling_mode & 2:
-        return mt5.ORDER_FILLING_IOC
-    if info.filling_mode & 1:
+def get_filling_mode(s_info) -> int:
+    mode_mask = s_info.filling_mode
+    if mode_mask & 1:
         return mt5.ORDER_FILLING_FOK
+    if mode_mask & 2:
+        return mt5.ORDER_FILLING_IOC
     return mt5.ORDER_FILLING_RETURN
 
 
-def compute_m15_atr(symbol: str, period: int = 14) -> float:
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, period + 15)
-    if rates is None or len(rates) < period + 1:
-        return 0.0
-    highs = rates["high"]
-    lows = rates["low"]
+def check_daily_circuit_breaker() -> tuple[bool, str]:
+    try:
+        now = datetime.now()
+        midnight_ts = datetime(now.year, now.month, now.day, 0, 0, 0).timestamp()
+        deals = mt5.history_deals_get(midnight_ts, now.timestamp()) or []
+        closed = [d for d in deals if d.entry == 1 and abs(d.profit) > 0.0001]
+        tot_profit = sum(d.profit for d in closed)
+        if tot_profit <= DAILY_MAX_LOSS_LIMIT:
+            return True, f"Daily loss ${tot_profit:.2f} breached ${DAILY_MAX_LOSS_LIMIT:.2f}"
+        return False, "NORMAL"
+    except Exception:
+        return False, "NORMAL"
+
+
+def execute_market_order(symbol: str, direction: str, lot: float = 0.01, sl: float = 0.0, tp: float = 0.0, comment: str = ORDER_COMMENT):
+    cb_tripped, cb_reason = check_daily_circuit_breaker()
+    if cb_tripped:
+        log.warning(f"ORDER REJECTED BY CIRCUIT BREAKER: {cb_reason}")
+        return False, cb_reason, 0
+
+    mt5.symbol_select(symbol, True)
+    s_info = mt5.symbol_info(symbol)
+    if not s_info:
+        return False, f"No symbol_info for {symbol}", 0
+
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        return False, f"No tick for {symbol}", 0
+
+    is_buy = direction.upper() == "BUY"
+    price = tick.ask if is_buy else tick.bid
+    order_type = mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL
+    filling_mode = get_filling_mode(s_info)
+
+    # Margin-safe guard so 0.50L BTC scales gracefully if free margin on $1,000 T4 is tight
+    use_lot = float(lot)
+    acc = mt5.account_info()
+    if acc and use_lot > s_info.volume_min:
+        margin_req = mt5.order_calc_margin(order_type, symbol, use_lot, price)
+        if margin_req and margin_req > (acc.margin_free * 0.70):
+            step = s_info.volume_step or 0.01
+            safe_lot = int(((acc.margin_free * 0.65) / margin_req) * use_lot / step) * step
+            use_lot = round(max(s_info.volume_min, safe_lot), 2)
+
+    request = {
+        "action": mt5.TRADE_ACTION_DEAL,
+        "symbol": symbol,
+        "volume": float(use_lot),
+        "type": order_type,
+        "price": float(price),
+        "deviation": 50,
+        "magic": MAGIC_NEXUS,
+        "comment": comment,
+        "type_time": mt5.ORDER_TIME_GTC,
+        "type_filling": filling_mode,
+    }
+    if sl > 0:
+        request["sl"] = float(sl)
+    if tp > 0:
+        request["tp"] = float(tp)
+
+    res = mt5.order_send(request)
+    if res is None:
+        return False, f"order_send None: {mt5.last_error()}", 0
+    if res.retcode != mt5.TRADE_RETCODE_DONE:
+        for alt_mode in [mt5.ORDER_FILLING_FOK, mt5.ORDER_FILLING_RETURN, mt5.ORDER_FILLING_IOC]:
+            if alt_mode != filling_mode:
+                request["type_filling"] = alt_mode
+                alt_res = mt5.order_send(request)
+                if alt_res and alt_res.retcode == mt5.TRADE_RETCODE_DONE:
+                    return True, f"Ticket #{alt_res.order}", alt_res.order
+        return False, f"retcode={res.retcode} ({res.comment})", 0
+
+    return True, f"Ticket #{res.order}", res.order
+
+
+def calculate_asset_edge(symbol: str):
+    """Exact 11/16/2026 telegram_interactive.py calculate_asset_edge()."""
+    mt5.symbol_select(symbol, True)
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        return None
+
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M15, 0, 50)
+    if rates is None or len(rates) < 10:
+        return None
+
     closes = rates["close"]
-    tr = np.maximum(highs[1:] - lows[1:], np.maximum(np.abs(highs[1:] - closes[:-1]), np.abs(lows[1:] - closes[:-1])))
-    return float(np.mean(tr[-period:]))
+    ma10 = float(sum(closes[-10:])) / 10.0
+    curr_close = float(closes[-1])
+    raw_delta = (curr_close - ma10) / ma10
+
+    s_info = mt5.symbol_info(symbol)
+    digits = s_info.digits if s_info else (5 if "USD" in symbol and symbol != "BTCUSD" else 2)
+    spread = float(tick.ask - tick.bid)
+
+    if raw_delta > 0.0003:
+        direction = "BUY"
+        edge = min(96, int(65 + abs(raw_delta) * 8000))
+        entry_price = round(float(tick.ask), digits)
+        sl = round(entry_price - (spread * 30), digits)
+        tp = round(entry_price + (spread * 65), digits)
+    elif raw_delta < -0.0003:
+        direction = "SELL"
+        edge = min(96, int(65 + abs(raw_delta) * 8000))
+        entry_price = round(float(tick.bid), digits)
+        sl = round(entry_price + (spread * 30), digits)
+        tp = round(entry_price - (spread * 65), digits)
+    else:
+        direction = "NEUTRAL"
+        edge = 50
+        entry_price = round(float(tick.bid), digits)
+        sl, tp = entry_price, entry_price
+
+    cleared = edge >= MIN_EDGE and direction != "NEUTRAL"
+
+    acc = mt5.account_info()
+    equity = float(acc.equity) if acc else 1000.0
+    lots = round(max(0.01, min(5.0, (equity * 0.01) / 300.0)), 2)
+    if "BTC" in symbol:
+        lots = 0.50
+
+    return {
+        "symbol": symbol,
+        "direction": direction,
+        "edge": edge,
+        "calculated_lots": lots,
+        "cleared": cleared,
+        "price": entry_price,
+        "sl": sl,
+        "tp": tp,
+    }
+
+
+def evaluate_stacking_opportunity(symbol: str) -> dict:
+    """Exact 11/04/2026 core/stacking_engine.py Pillar 1 Asymmetric Stacker."""
+    positions = mt5.positions_get(symbol=symbol) or []
+    if not positions:
+        return {"eligible": False}
+
+    parent_pos = None
+    existing_stacks = []
+    for p in positions:
+        if "STACK" in (p.comment or ""):
+            existing_stacks.append(p)
+        else:
+            parent_pos = p
+
+    if existing_stacks or not parent_pos:
+        return {"eligible": False}
+
+    is_be = abs(parent_pos.sl - parent_pos.price_open) < 0.001
+    if not is_be:
+        return {"eligible": False}
+
+    risk_dist = 0.0020
+    if "JPY" in symbol:
+        risk_dist = 0.200
+    elif "XAU" in symbol:
+        risk_dist = 5.00
+    elif "BTC" in symbol:
+        risk_dist = 150.0
+
+    current_dist = (parent_pos.price_current - parent_pos.price_open) if parent_pos.type == 0 else (parent_pos.price_open - parent_pos.price_current)
+    current_r = current_dist / risk_dist
+    if current_r < 1.2:
+        return {"eligible": False}
+
+    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 20)
+    if rates is None or len(rates) < 10:
+        return {"eligible": False}
+
+    direction = "BUY" if parent_pos.type == 0 else "SELL"
+    stack_lot = max(0.01, round(parent_pos.volume * 0.5, 2))
+    tick = mt5.symbol_info_tick(symbol)
+    if not tick:
+        return {"eligible": False}
+
+    s_info = mt5.symbol_info(symbol)
+    digits = s_info.digits if s_info else 5
+
+    if direction == "BUY":
+        sl = float(np.min(rates["low"][-5:]))
+        entry = float(tick.ask)
+        if sl >= entry or (entry - sl) > (risk_dist * 1.5):
+            sl = entry - (risk_dist * 0.8)
+        tp = entry + (abs(entry - sl) * 2.5)
+    else:
+        sl = float(np.max(rates["high"][-5:]))
+        entry = float(tick.bid)
+        if sl <= entry or (sl - entry) > (risk_dist * 1.5):
+            sl = entry + (risk_dist * 0.8)
+        tp = entry - (abs(sl - entry) * 2.5)
+
+    return {
+        "eligible": True,
+        "symbol": symbol,
+        "direction": direction,
+        "lot": stack_lot,
+        "sl": round(sl, digits),
+        "tp": round(tp, digits),
+        "parent_ticket": parent_pos.ticket,
+        "parent_r": round(current_r, 2),
+    }
+
+
+def manage_breakeven_and_trailing():
+    """Protects open positions at Breakeven once +1.0R in profit so stacking_engine unlocks."""
+    for p in (mt5.positions_get() or []):
+        s_info = mt5.symbol_info(p.symbol)
+        tick = mt5.symbol_info_tick(p.symbol)
+        if not s_info or not tick:
+            continue
+        digits = s_info.digits
+        is_buy = (p.type == 0)
+        curr_px = float(tick.bid if is_buy else tick.ask)
+        entry = float(p.price_open)
+        init_risk = abs(entry - float(p.sl)) if p.sl > 0 else 0.0
+        if init_risk <= 0:
+            continue
+        gain = (curr_px - entry) if is_buy else (entry - curr_px)
+        be_px = round(entry, digits)
+        if gain >= init_risk:
+            if (is_buy and p.sl < be_px) or (not is_buy and p.sl > be_px):
+                res = mt5.order_send({
+                    "action": mt5.TRADE_ACTION_SLTP,
+                    "position": p.ticket,
+                    "symbol": p.symbol,
+                    "sl": be_px,
+                    "tp": p.tp,
+                })
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    log.info(f"[AUTO-BE LOCK] #{p.ticket} {p.symbol} SL moved to exact entry {be_px}")
 
 
 def update_heartbeat(login: int, equity: float, open_cnt: int, status: str):
@@ -247,114 +325,7 @@ def update_heartbeat(login: int, equity: float, open_cnt: int, status: str):
         pass
 
 
-def manage_t4_positions(positions, state: dict):
-    """Exact Sovereign Sentry: 1.0x M15 ATR BE+2pips -> 1.2x ATR 50% Bank -> 1.5x ATR Chandelier -> 4h/8h Decay."""
-    now_ts = int(time.time())
-    banked = set(state.get("banked_tickets", []))
-    choked = set(state.get("choked_tickets", []))
-    dirty = False
-
-    for p in positions:
-        sym = p.symbol
-        ticket = p.ticket
-        info = mt5.symbol_info(sym)
-        tick = mt5.symbol_info_tick(sym)
-        if not info or not tick:
-            continue
-
-        atr = compute_m15_atr(sym, 14)
-        if atr <= 0:
-            continue
-
-        digits = info.digits
-        point = info.point
-        is_buy = (p.type == mt5.ORDER_TYPE_BUY)
-        curr_px = tick.bid if is_buy else tick.ask
-        entry = p.price_open
-        gain = (curr_px - entry) if is_buy else (entry - curr_px)
-        be_sl = round((entry + 20 * point) if is_buy else (entry - 20 * point), digits)
-        is_armored = (ticket in banked) or (is_buy and p.sl >= entry) or (not is_buy and 0 < p.sl <= entry)
-
-        elapsed = now_ts - int(p.time)
-        if not is_armored:
-            if elapsed >= TERMINAL_SEC and gain < (1.0 * atr):
-                opp = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
-                res = mt5.order_send({
-                    "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": p.volume,
-                    "type": opp, "position": ticket, "price": curr_px, "deviation": 25,
-                    "magic": MAGIC_SOVEREIGN, "comment": "THETA_REAP_8H",
-                    "type_time": mt5.ORDER_TIME_GTC, "type_filling": get_filling_mode(info),
-                })
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    log.info(f"[THETA REAP 8H] Closed stagnant #{ticket} {sym} after {elapsed/3600:.1f}h")
-                continue
-
-            if elapsed >= HALF_LIFE_SEC and gain < (0.6 * atr) and ticket not in choked:
-                new_sl = round((entry - 0.75 * atr) if is_buy else (entry + 0.75 * atr), digits)
-                if (is_buy and p.sl < new_sl) or (not is_buy and (p.sl == 0 or p.sl > new_sl)):
-                    res = mt5.order_send({
-                        "action": mt5.TRADE_ACTION_SLTP, "position": ticket,
-                        "symbol": sym, "sl": new_sl, "tp": p.tp,
-                    })
-                    if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                        choked.add(ticket)
-                        dirty = True
-                        log.info(f"[ALPHA DECAY 4H] Tightened SL on #{ticket} {sym} -> {new_sl}")
-
-        if gain <= 0:
-            continue
-
-        if gain >= (1.2 * atr) and ticket not in banked:
-            step = info.volume_step or 0.01
-            half_vol = round(round((p.volume * 0.5) / step) * step, 2)
-            if half_vol >= info.volume_min and (p.volume - half_vol) >= info.volume_min:
-                opp = mt5.ORDER_TYPE_SELL if is_buy else mt5.ORDER_TYPE_BUY
-                res = mt5.order_send({
-                    "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": half_vol,
-                    "type": opp, "position": ticket, "price": curr_px, "deviation": 25,
-                    "magic": MAGIC_SOVEREIGN, "comment": f"AutoTP1 #{ticket}",
-                    "type_time": mt5.ORDER_TIME_GTC, "type_filling": get_filling_mode(info),
-                })
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    banked.add(ticket)
-                    dirty = True
-                    mt5.order_send({
-                        "action": mt5.TRADE_ACTION_SLTP, "position": ticket,
-                        "symbol": sym, "sl": be_sl, "tp": 0.0,
-                    })
-                    log.info(f"[TP1 50% BANKED] #{ticket} {sym}: Closed {half_vol}L | Runner SL={be_sl} (TP uncapped)")
-                    continue
-
-        if gain >= (1.0 * atr):
-            if (is_buy and p.sl < be_sl) or (not is_buy and (p.sl == 0 or p.sl > be_sl)):
-                res = mt5.order_send({
-                    "action": mt5.TRADE_ACTION_SLTP, "position": ticket,
-                    "symbol": sym, "sl": be_sl, "tp": p.tp,
-                })
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    log.info(f"[AUTO-ARMOR BE+2p] #{ticket} {sym} SL locked @ {be_sl}")
-                    continue
-
-        if gain >= (1.5 * atr):
-            prop_sl = round((curr_px - 1.0 * atr) if is_buy else (curr_px + 1.0 * atr), digits)
-            min_step = 0.25 * atr
-            if (is_buy and prop_sl > p.sl + min_step and prop_sl > be_sl) or (
-                not is_buy and p.sl > 0 and prop_sl < p.sl - min_step and prop_sl < be_sl
-            ):
-                res = mt5.order_send({
-                    "action": mt5.TRADE_ACTION_SLTP, "position": ticket,
-                    "symbol": sym, "sl": prop_sl, "tp": p.tp,
-                })
-                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    log.info(f"[CHANDELIER TRAIL] #{ticket} {sym} SL -> {prop_sl}")
-
-    if dirty:
-        state["banked_tickets"] = list(banked)[-200:]
-        state["choked_tickets"] = list(choked)[-200:]
-        save_state(state)
-
-
-def run_t4_sovereign():
+def run_t4_nexus_1116():
     if not mt5.initialize(path=T4_MT5_PATH, login=278071462, password=r"H@ngkook3695", server="Exness-MT5Trial5", portable=True):
         log.error(f"MT5 T4 init/login failed: {mt5.last_error()}")
         return
@@ -364,12 +335,11 @@ def run_t4_sovereign():
 
     acct = mt5.account_info()
     log.info(
-        f"T4 SOVEREIGN NEXUS (11/04/2026 EXACT REPLICA) ONLINE | Account=#{acct.login} | "
-        f"Equity=${acct.equity:.2f} | SCAN_SYMBOLS={SCAN_SYMBOLS} | Magic={MAGIC_SOVEREIGN} | Cycle=60s"
+        f"T4 NEXUS AUTONOMOUS (11/16/2026 EXACT LAPTOP ENGINE) ONLINE | Account=#{acct.login} | "
+        f"Equity=${acct.equity:.2f} | Assets={ASSETS} | MinEdge={MIN_EDGE}% | Magic={MAGIC_NEXUS} | Cycle=15s"
     )
-    state = load_state()
-    last_scan_ts = 0.0
 
+    cycle_num = 0
     while True:
         try:
             acct = mt5.account_info()
@@ -377,72 +347,68 @@ def run_t4_sovereign():
                 time.sleep(3)
                 continue
 
-            positions = list(mt5.positions_get() or [])
-            manage_t4_positions(positions, state)
+            manage_breakeven_and_trailing()
 
-            positions = list(mt5.positions_get() or [])
-            status_str = f"MANAGING_ACTIVE({len(positions)})" if positions else "ACTIVE_SOVEREIGN(Open:0)"
-            update_heartbeat(acct.login, acct.equity, len(positions), status_str)
+            scans = []
+            for sym in ASSETS:
+                res = calculate_asset_edge(sym)
+                if res:
+                    scans.append(res)
+            scans.sort(key=lambda x: x.get("edge", 0), reverse=True)
 
-            now_ts = time.time()
-            if (now_ts - last_scan_ts) >= SCAN_INTERVAL_SEC:
-                last_scan_ts = now_ts
-                for asset in SCAN_SYMBOLS:
-                    real_sym = get_exact_broker_symbol(asset)
-                    if not is_market_open(real_sym):
-                        continue
-                    router = resolve_router(asset, real_sym)
-                    base = router["base"]
-                    if any(base in p.symbol.upper() for p in positions):
-                        continue
+            cb_active, _ = check_daily_circuit_breaker()
+            if not cb_active:
+                for candidate in scans:
+                    sym = candidate["symbol"]
+                    edge = candidate["edge"]
+                    direction = candidate["direction"]
+                    cleared = candidate.get("cleared", False)
 
-                    data = calculate_confluence_edge(real_sym)
-                    score = data.get("score", 0.0)
-                    bias = data.get("bias", "NEUTRAL")
-                    spot = data.get("spot", 0.0)
-                    d = router["digits"]
+                    positions = mt5.positions_get(symbol=sym)
+                    is_locked = positions and len(positions) > 0
 
-                    if score >= CONFLUENCE_GATE and bias in ("BUY", "SELL") and spot > 0:
-                        sl = round(spot - router["sl_offset"], d) if bias == "BUY" else round(spot + router["sl_offset"], d)
-                        tp = round(spot + router["tp1_offset"], d) if bias == "BUY" else round(spot - router["tp1_offset"], d)
-                        calc = calculate_dynamic_risk_lot(float(acct.equity), real_sym, spot, sl, RISK_PCT)
-                        info = mt5.symbol_info(real_sym)
-                        if not info:
-                            continue
-
-                        req = {
-                            "action": mt5.TRADE_ACTION_DEAL,
-                            "symbol": real_sym,
-                            "volume": calc["lot"],
-                            "type": mt5.ORDER_TYPE_BUY if bias == "BUY" else mt5.ORDER_TYPE_SELL,
-                            "price": spot,
-                            "sl": sl,
-                            "tp": tp,
-                            "deviation": 30,
-                            "magic": MAGIC_SOVEREIGN,
-                            "comment": ORDER_COMMENT,
-                            "type_time": mt5.ORDER_TIME_GTC,
-                            "type_filling": get_filling_mode(info),
-                        }
-                        res = mt5.order_send(req)
-                        if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    if cleared and not is_locked:
+                        lots = candidate.get("calculated_lots", 0.01)
+                        sl = candidate.get("sl", 0.0)
+                        tp = candidate.get("tp", 0.0)
+                        ok, msg, ticket = execute_market_order(sym, direction, lot=lots, sl=sl, tp=tp, comment=ORDER_COMMENT)
+                        if ok:
                             log.info(
-                                f"[NEXUS AUTONOMOUS FILL] #{res.order} {real_sym} {bias} {calc['lot']:.2f}L @ {spot:,.{d}f} | "
-                                f"Magic={MAGIC_SOVEREIGN} | Score={score}/100 RSI={data.get('rsi')} | SL={sl:,.{d}f} TP={tp:,.{d}f}"
+                                f"[INSTANT-TRIGGER] #{ticket} {sym} {direction} ({lots}L @ {edge}% Edge) | "
+                                f"Entry={candidate['price']} SL={sl} TP={tp} | Magic={MAGIC_NEXUS}"
                             )
-                            positions = list(mt5.positions_get() or [])
                         else:
-                            log.warning(f"[REJECTED] {real_sym} {bias}: {getattr(res, 'retcode', None)} {getattr(res, 'comment', '')}")
+                            log.warning(f"[REJECTED] {sym} {direction} ({lots}L @ {edge}%): {msg}")
 
-            time.sleep(5)
+            # Pillar 1: Asymmetric Invalidation Stacking Scanner
+            for s_sym in ASSETS:
+                st_res = evaluate_stacking_opportunity(s_sym)
+                if st_res.get("eligible"):
+                    ok_st, st_msg, st_ticket = execute_market_order(
+                        s_sym, st_res["direction"], lot=st_res["lot"], sl=st_res["sl"], tp=st_res["tp"],
+                        comment=f"Nexus Autonomous STACK #{st_res['parent_ticket']}"
+                    )
+                    if ok_st:
+                        log.info(f"[ASYMMETRIC STACK] #{st_ticket} {s_sym} {st_res['direction']} {st_res['lot']}L behind Parent #{st_res['parent_ticket']}")
+
+            live_pos = list(mt5.positions_get() or [])
+            status_str = f"MANAGING_ACTIVE({len(live_pos)})" if live_pos else "ACTIVE_NEXUS_15S(Open:0)"
+            update_heartbeat(acct.login, acct.equity, len(live_pos), status_str)
+
+            cycle_num += 1
+            if cycle_num % 4 == 1 and scans:
+                summary = " | ".join(f"{s['symbol']}:{s['direction']}({s['edge']}%)" for s in scans)
+                log.info(f"[15s-SCAN] {summary} | Open={len(live_pos)}")
+
+            time.sleep(SCAN_INTERVAL_SEC)
         except KeyboardInterrupt:
             break
         except Exception as e:
-            log.error(f"T4 loop exception: {e}")
+            log.error(f"T4 15s daemon exception: {e}")
             time.sleep(5)
 
     mt5.shutdown()
 
 
 if __name__ == "__main__":
-    run_t4_sovereign()
+    run_t4_nexus_1116()
