@@ -91,7 +91,7 @@ def poll_tg_commands(scans: list, state: dict):
                 lines = [
                     "?? <b>T4 SOVEREIGN NEXUS // LIVE TELEMETRY</b>",
                     "??????????????????????????",
-                    f"? <b>Account:</b> <code>#278071462</code> (Exness-MT5Trial5)",
+                    "? <b>Account:</b> <code>#278071462</code> (Exness-MT5Trial5)",
                     f"? <b>Balance:</b> <code>${acc.balance:,.2f}</code> | <b>Equity:</b> <code>${acc.equity:,.2f}</code>",
                     f"? <b>Free Margin:</b> <code>${acc.margin_free:,.2f}</code> | <b>Open:</b> <code>{len(pos)}/5</code>",
                 ]
@@ -100,10 +100,9 @@ def poll_tg_commands(scans: list, state: dict):
                     for p in pos:
                         side = "?? BUY" if p.type == 0 else "?? SELL"
                         lines.append(f"? <code>#{p.ticket}</code> <b>{p.symbol}</b> {side} <code>{p.volume:.2f}L</code> | <b>PnL:</b> <code>${p.profit:+.2f}</code>")
-                    lines.append(f"
-?? <b>Total Float:</b> <code>${sum(p.profit for p in pos):+.2f}</code>")
-                send_tg_message("
-".join(lines))
+                    lines.append("")
+                    lines.append(f"?? <b>Total Float:</b> <code>${sum(p.profit for p in pos):+.2f}</code>")
+                send_tg_message("\n".join(lines))
             elif txt.startswith("/scan"):
                 lines = [
                     "?? <b>T4 OMEGA FX // 5-ASSET RADAR</b>",
@@ -113,8 +112,7 @@ def poll_tg_commands(scans: list, state: dict):
                     d_icon = "?? BUY" if s["direction"] == "BUY" else ("?? SELL" if s["direction"] == "SELL" else "? NEUTRAL")
                     badge = "? CLEARED ?72%" if s.get("cleared") else f"({s['edge']}%)"
                     lines.append(f"#{idx} <b>{s['symbol']}</b> | {d_icon} {badge} | @ <code>{s['price']}</code>")
-                send_tg_message("
-".join(lines))
+                send_tg_message("\n".join(lines))
         state["tg_update_offset"] = max_uid
         save_state(state)
     except Exception:
@@ -386,14 +384,10 @@ def manage_breakeven_and_trailing(state: dict):
                         be_locked.add(p.ticket)
                         dirty = True
                         send_tg_message(
-                            f"??? <b>T4 AUTO-ARMOR // BREAKEVEN LOCKED</b>
-"
-                            f"??????????????????????????
-"
-                            f"? <b>Ticket:</b> <code>#{p.ticket}</code> (<b>{p.symbol}</b>)
-"
-                            f"? <b>Protected SL:</b> <code>{be_px}</code> (Zero-Risk)
-"
+                            "??? <b>T4 AUTO-ARMOR // BREAKEVEN LOCKED</b>\n"
+                            "??????????????????????????\n"
+                            f"? <b>Ticket:</b> <code>#{p.ticket}</code> (<b>{p.symbol}</b>)\n"
+                            f"? <b>Protected SL:</b> <code>{be_px}</code> (Zero-Risk)\n"
                             f"? <b>Floating PnL:</b> <code>${p.profit:+.2f}</code>"
                         )
     if dirty:
@@ -420,14 +414,10 @@ def check_closed_positions_and_notify(live_pos: list, state: dict):
                 net_pnl = float(d.profit + d.swap + d.commission)
                 badge = "? TARGET / WIN" if net_pnl >= 0 else "?? STOP / EXIT"
                 send_tg_message(
-                    f"?? <b>T4 POSITION CLOSED // {badge}</b>
-"
-                    f"??????????????????????????
-"
-                    f"? <b>Ticket:</b> <code>#{t}</code> (<b>{d.symbol}</b>)
-"
-                    f"? <b>Realized PnL:</b> <code>${net_pnl:+.2f}</code>
-"
+                    f"?? <b>T4 POSITION CLOSED // {badge}</b>\n"
+                    "??????????????????????????\n"
+                    f"? <b>Ticket:</b> <code>#{t}</code> (<b>{d.symbol}</b>)\n"
+                    f"? <b>Realized PnL:</b> <code>${net_pnl:+.2f}</code>\n"
                     f"? <b>Updated T4 Equity:</b> <code>{eq_str}</code>"
                 )
 
@@ -479,19 +469,13 @@ def run_t4_nexus_1116():
         f"Equity=${acct.equity:.2f} | Open={len(init_pos)} | Cycle=15s"
     )
     send_tg_message(
-        f"?? <b>T4 SOVEREIGN NEXUS // TELEGRAM TELEMETRY ONLINE</b>
-"
-        f"??????????????????????????
-"
-        f"? <b>Terminal:</b> <code>T4 (#278071462)</code> on AdmVps
-"
-        f"? <b>Engine:</b> <code>11/16/2026 Nexus Autonomous (Magic 999888)</code>
-"
-        f"? <b>Balance:</b> <code>${acct.balance:,.2f}</code> | <b>Equity:</b> <code>${acct.equity:,.2f}</code>
-"
-        f"? <b>Active Positions:</b> <code>{len(init_pos)}/5</code> (15s Multi-Asset Scan)
-"
-        f"? <b>Commands:</b> <code>/status</code> | <code>/scan</code>"
+        "?? <b>T4 SOVEREIGN NEXUS // TELEGRAM TELEMETRY ONLINE</b>\n"
+        "??????????????????????????\n"
+        "? <b>Terminal:</b> <code>T4 (#278071462)</code> on AdmVps\n"
+        "? <b>Engine:</b> <code>11/16/2026 Nexus Autonomous (Magic 999888)</code>\n"
+        f"? <b>Balance:</b> <code>${acct.balance:,.2f}</code> | <b>Equity:</b> <code>${acct.equity:,.2f}</code>\n"
+        f"? <b>Active Positions:</b> <code>{len(init_pos)}/5</code> (15s Multi-Asset Scan)\n"
+        "? <b>Commands:</b> <code>/status</code> | <code>/scan</code>"
     )
 
     cycle_num = 0
@@ -535,19 +519,13 @@ def run_t4_nexus_1116():
                                 f"Entry={candidate['price']} SL={sl} TP={tp} | Magic={MAGIC_NEXUS}"
                             )
                             send_tg_message(
-                                f"???? <b>[T4 NEXUS SENTINEL: AUTO-FIRED TRADE]</b> ????
-"
-                                f"??????????????????????????
-"
-                                f"?? <b>Ticket:</b> <code>#{ticket}</code>
-"
-                                f"?? <b>Symbol:</b> <code>{sym}</code> ({direction} @ <code>{edge}%</code>)
-"
-                                f"?? <b>Sizing:</b> <code>{lots:.2f} Lots</code>
-"
-                                f"?? <b>SL:</b> <code>{sl}</code> | ?? <b>TP:</b> <code>{tp}</code>
-"
-                                f"??? <b>Status:</b> LIVE ON T4 (#278071462)"
+                                "???? <b>[T4 NEXUS SENTINEL: AUTO-FIRED TRADE]</b> ????\n"
+                                "??????????????????????????\n"
+                                f"?? <b>Ticket:</b> <code>#{ticket}</code>\n"
+                                f"?? <b>Symbol:</b> <code>{sym}</code> ({direction} @ <code>{edge}%</code>)\n"
+                                f"?? <b>Sizing:</b> <code>{lots:.2f} Lots</code>\n"
+                                f"?? <b>SL:</b> <code>{sl}</code> | ?? <b>TP:</b> <code>{tp}</code>\n"
+                                "??? <b>Status:</b> LIVE ON T4 (#278071462)"
                             )
                         else:
                             log.warning(f"[REJECTED] {sym} {direction} ({lots}L @ {edge}%): {msg}")
@@ -563,14 +541,10 @@ def run_t4_nexus_1116():
                     if ok_st:
                         log.info(f"[ASYMMETRIC STACK] #{st_ticket} {s_sym} {st_res['direction']} {st_res['lot']}L behind Parent #{st_res['parent_ticket']}")
                         send_tg_message(
-                            f"?? <b>[T4 ASYMMETRIC STACK // PILLAR 1 ADD-ON]</b>
-"
-                            f"??????????????????????????
-"
-                            f"? <b>Stack Ticket:</b> <code>#{st_ticket}</code> (Parent <code>#{st_res['parent_ticket']}</code> @ <code>+{st_res['parent_r']}R</code> BE)
-"
-                            f"? <b>Symbol:</b> <code>{s_sym}</code> ({st_res['direction']} <code>{st_res['lot']:.2f}L</code>)
-"
+                            "?? <b>[T4 ASYMMETRIC STACK // PILLAR 1 ADD-ON]</b>\n"
+                            "??????????????????????????\n"
+                            f"? <b>Stack Ticket:</b> <code>#{st_ticket}</code> (Parent <code>#{st_res['parent_ticket']}</code> @ <code>+{st_res['parent_r']}R</code> BE)\n"
+                            f"? <b>Symbol:</b> <code>{s_sym}</code> ({st_res['direction']} <code>{st_res['lot']:.2f}L</code>)\n"
                             f"? <b>SL:</b> <code>{st_res['sl']}</code> | <b>TP:</b> <code>{st_res['tp']}</code>"
                         )
 
