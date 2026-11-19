@@ -1,10 +1,11 @@
 """
-QUANT-NEXUS TERMINAL 4 (T4) // SOVEREIGN APEX NODE (v14.0)
-Dedicated XAUUSD + BTCUSD + EURUSD Engine:
-- Additive Confluence Scoring (>= 80.0 / 100)
-- 1.0% Equity-Parity Risk Sizing (1.5x M15 ATR SL / 3.0x M15 ATR TP = 1:2 R:R)
-- 1.0x ATR Zero-Touch BE (+2 pips) -> 1.2x ATR 50% Partial Bank -> 1.5x ATR Chandelier Trail
-- 4h Soft Choke / 8h Alpha Half-Life Decay Reaper
+QUANT-NEXUS TERMINAL 4 (T4) // VERIFIED 11/04/2026 SOVEREIGN NEXUS REPLICA (#278060961)
+Exact Forensic Parity Build:
+- SCAN_SYMBOLS = ["BTCUSD", "ETHUSD", "XAUUSD", "EURUSD", "GBPUSD"]
+- 60-Second Multi-Asset Confluence Sweep (TIMEFRAME_M15, 100 bars, EMA 9/21/50 + RSI14 + 10-bar Breakout >= 80.0)
+- Exact Calibrated Router Offsets (sl_offset / tp1_offset) + 1.0% Equity-Parity Risk Sizing
+- Exact Deal Fingerprint from #278060961 History: magic=999888, comment="Nexus Autonomous"
+- 4-Stage Autonomous Lifecycle: 1.0x M15 ATR BE (+2 pips) -> 1.2x ATR 50% Harvest -> 1.5x ATR Chandelier -> 4h/8h Decay
 """
 import os
 import sys
@@ -21,21 +22,30 @@ LEDGER_DB = r"C:\Quant-Nexus-Eng\nexus_ledger.db"
 STATE_FILE = r"C:\Quant-Nexus-Eng\t4_sovereign_state.json"
 LOG_FILE = r"C:\Quant-Nexus-Eng\logs\t4_sovereign_apex.log"
 
-MAGIC_T4 = 999888
-WATCHLIST = ["XAUUSD", "BTCUSD", "EURUSD"]
-RISK_PCT = 0.01          # 1.0% Equity-Parity Risk per trade
-CONFLUENCE_GATE = 80.0   # Triggers >= 80.0 / 100
-MAX_SLOTS = 3            # Max 1 slot per symbol (XAUUSD, BTCUSD, EURUSD)
-HALF_LIFE_SEC = 14400    # 4h soft risk choke
-TERMINAL_SEC = 28800     # 8h stagnation reaper
+SCAN_SYMBOLS = ["BTCUSD", "ETHUSD", "XAUUSD", "EURUSD", "GBPUSD"]
+CONFLUENCE_GATE = 80.0
+RISK_PCT = 0.01
+SCAN_INTERVAL_SEC = 60.0
+MAGIC_SOVEREIGN = 999888
+ORDER_COMMENT = "Nexus Autonomous"
+HALF_LIFE_SEC = 14400     # 4 Hours
+TERMINAL_SEC = 28800      # 8 Hours
+
+ROUTER_PROFILES = {
+    "BTC": {"canonical": "BTCUSD", "name": "Bitcoin / U.S. Dollar", "digits": 2, "sl_offset": 280.0, "tp1_offset": 450.0, "tp2_offset": 950.0},
+    "ETH": {"canonical": "ETHUSD", "name": "Ethereum / U.S. Dollar", "digits": 2, "sl_offset": 18.0, "tp1_offset": 32.0, "tp2_offset": 65.0},
+    "XAU": {"canonical": "XAUUSD", "name": "Gold Spot / U.S. Dollar", "digits": 2, "sl_offset": 3.80, "tp1_offset": 6.50, "tp2_offset": 12.00},
+    "EUR": {"canonical": "EURUSD", "name": "Euro / U.S. Dollar", "digits": 5, "sl_offset": 0.00180, "tp1_offset": 0.00320, "tp2_offset": 0.00650},
+    "GBP": {"canonical": "GBPUSD", "name": "British Pound / U.S. Dollar", "digits": 5, "sl_offset": 0.00220, "tp1_offset": 0.00380, "tp2_offset": 0.00750},
+}
 
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [T4-SOVEREIGN] %(levelname)s: %(message)s",
+    format="%(asctime)s [T4-SOVEREIGN-1104] %(levelname)s: %(message)s",
     handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8"), logging.StreamHandler(sys.stdout)],
 )
-log = logging.getLogger("T4_Sovereign")
+log = logging.getLogger("T4_Sovereign_1104")
 
 
 def load_state() -> dict:
@@ -53,18 +63,155 @@ def save_state(state: dict):
         with open(STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(state, f, indent=2)
     except Exception as e:
-        log.warning(f"State persist failed: {e}")
+        log.warning(f"State save failed: {e}")
 
 
-def resolve_symbol(base: str) -> str | None:
-    for cand in (base, f"{base}m", f"{base}.raw", f"{base}_i", f"{base}c"):
-        info = mt5.symbol_info(cand)
-        if info and info.trade_mode != mt5.SYMBOL_TRADE_MODE_DISABLED and not cand.endswith("_x10"):
-            mt5.symbol_select(cand, True)
-            tick = mt5.symbol_info_tick(cand)
-            if tick and tick.bid > 0:
-                return cand
-    return None
+def get_exact_broker_symbol(base_sym: str) -> str:
+    candidates = [base_sym, f"{base_sym}m", f"{base_sym}.s", f"{base_sym}c", f"{base_sym}raw", f"{base_sym}.a", f"{base_sym}_i"]
+    for s in candidates:
+        info = mt5.symbol_info(s)
+        if info is not None and not s.endswith("_x10"):
+            mt5.symbol_select(s, True)
+            return s
+    return base_sym
+
+
+def is_market_open(symbol: str) -> bool:
+    real_sym = get_exact_broker_symbol(symbol)
+    tick = mt5.symbol_info_tick(real_sym)
+    if not tick or tick.bid <= 0:
+        return False
+    if (time.time() - tick.time) > 86400:
+        return False
+    info = mt5.symbol_info(real_sym)
+    return bool(info and info.trade_mode in [mt5.SYMBOL_TRADE_EXECUTION_MARKET, mt5.SYMBOL_TRADE_MODE_FULL])
+
+
+def resolve_router(base_asset: str, real_sym: str) -> dict:
+    key = "BTC"
+    for k in ("BTC", "ETH", "XAU", "EUR", "GBP"):
+        if k in base_asset.upper():
+            key = k
+            break
+    prof = dict(ROUTER_PROFILES[key])
+    prof["base"] = key
+    prof["symbol"] = real_sym
+    info = mt5.symbol_info(real_sym)
+    if info:
+        prof["digits"] = info.digits
+    return prof
+
+
+def calc_ema(arr: np.ndarray, period: int) -> np.ndarray:
+    alpha = 2.0 / (period + 1.0)
+    out = [float(arr[0])]
+    for p in arr[1:]:
+        out.append(alpha * float(p) + (1.0 - alpha) * out[-1])
+    return np.array(out, dtype=float)
+
+
+def calculate_confluence_edge(symbol: str) -> dict:
+    """Exact 11/04/2026 sovereign_nexus.py TIMEFRAME_M15 100-bar Confluence Engine."""
+    real_sym = get_exact_broker_symbol(symbol)
+    tick = mt5.symbol_info_tick(real_sym)
+    spot_fallback = float(tick.bid) if tick else 0.0
+    fallback_data = {"score": 50.0, "bias": "NEUTRAL", "rsi": 50.0, "spot": spot_fallback, "status": "CONSOLIDATION"}
+
+    rates = mt5.copy_rates_from_pos(real_sym, mt5.TIMEFRAME_M15, 0, 100)
+    if rates is None or len(rates) < 50:
+        return fallback_data
+
+    try:
+        closes = np.array([r["close"] for r in rates], dtype=float)
+        highs = np.array([r["high"] for r in rates], dtype=float)
+        lows = np.array([r["low"] for r in rates], dtype=float)
+
+        ema9 = calc_ema(closes, 9)
+        ema21 = calc_ema(closes, 21)
+        ema50 = calc_ema(closes, 50)
+        curr_c = float(closes[-1])
+
+        deltas = np.diff(closes[-15:])
+        gains = np.where(deltas > 0, deltas, 0.0)
+        losses = np.where(deltas < 0, -deltas, 0.0)
+        avg_g = float(np.mean(gains)) if len(gains) > 0 else 0.0
+        avg_l = float(np.mean(losses)) if len(losses) > 0 else 0.0001
+        rs = avg_g / (avg_l if avg_l != 0 else 0.0001)
+        rsi = 100.0 - (100.0 / (1.0 + rs))
+
+        bull_pts = 0.0
+        bear_pts = 0.0
+
+        if ema9[-1] > ema21[-1] > ema50[-1]:
+            bull_pts += 30.0
+        elif ema9[-1] < ema21[-1] < ema50[-1]:
+            bear_pts += 30.0
+        elif ema9[-1] > ema21[-1]:
+            bull_pts += 15.0
+        elif ema9[-1] < ema21[-1]:
+            bear_pts += 15.0
+
+        if rsi < 32.0:
+            bull_pts += 35.0
+        elif rsi > 68.0:
+            bear_pts += 35.0
+        elif 40.0 <= rsi <= 55.0 and bull_pts > 0:
+            bull_pts += 20.0
+        elif 45.0 <= rsi <= 60.0 and bear_pts > 0:
+            bear_pts += 20.0
+
+        if curr_c > float(np.max(highs[-10:-1])):
+            bull_pts += 25.0
+        elif curr_c < float(np.min(lows[-10:-1])):
+            bear_pts += 25.0
+
+        if bull_pts > bear_pts:
+            final_score = min(96.5, round(50.0 + (bull_pts * 0.48), 1))
+            bias = "BUY" if final_score >= 65.0 else "NEUTRAL"
+        elif bear_pts > bull_pts:
+            final_score = min(96.5, round(50.0 + (bear_pts * 0.48), 1))
+            bias = "SELL" if final_score >= 65.0 else "NEUTRAL"
+        else:
+            final_score = 50.0
+            bias = "NEUTRAL"
+
+        spot = float(tick.ask) if (tick and bias == "BUY") else (float(tick.bid) if tick else curr_c)
+        return {
+            "score": final_score,
+            "bias": bias,
+            "rsi": round(rsi, 1),
+            "spot": spot,
+            "status": "ACTIVE" if final_score >= CONFLUENCE_GATE else "SCANNING",
+        }
+    except Exception:
+        return fallback_data
+
+
+def calculate_dynamic_risk_lot(equity: float, symbol: str, entry: float, sl: float, risk_pct: float = 0.01) -> dict:
+    info = mt5.symbol_info(symbol)
+    sl_dist = abs(entry - sl)
+    if not info or sl_dist <= 0 or info.trade_tick_size <= 0:
+        return {"lot": 0.01, "risk_usd": round(equity * risk_pct, 2)}
+    risk_cash = equity * risk_pct
+    ticks_at_risk = sl_dist / info.trade_tick_size
+    cash_per_lot = ticks_at_risk * info.trade_tick_value
+    if cash_per_lot <= 0:
+        return {"lot": info.volume_min, "risk_usd": round(risk_cash, 2)}
+    raw_lot = risk_cash / cash_per_lot
+    step = info.volume_step or 0.01
+    steps = round(raw_lot / step)
+    norm_lot = max(info.volume_min, min(info.volume_max, steps * step))
+    step_str = str(step)
+    vol_digits = len(step_str.split(".")[1]) if "." in step_str else 0
+    return {"lot": round(norm_lot, vol_digits), "risk_usd": round(risk_cash, 2)}
+
+
+def get_filling_mode(info) -> int:
+    if info.filling_mode & 2:
+        return mt5.ORDER_FILLING_IOC
+    if info.filling_mode & 1:
+        return mt5.ORDER_FILLING_FOK
+    return mt5.ORDER_FILLING_RETURN
 
 
 def compute_m15_atr(symbol: str, period: int = 14) -> float:
@@ -76,100 +223,6 @@ def compute_m15_atr(symbol: str, period: int = 14) -> float:
     closes = rates["close"]
     tr = np.maximum(highs[1:] - lows[1:], np.maximum(np.abs(highs[1:] - closes[:-1]), np.abs(lows[1:] - closes[:-1])))
     return float(np.mean(tr[-period:]))
-
-
-
-def compute_ema(arr: np.ndarray, span: int) -> np.ndarray:
-    alpha = 2.0 / (span + 1.0)
-    out = np.empty_like(arr, dtype=float)
-    out[0] = float(arr[0])
-    for i in range(1, len(arr)):
-        out[i] = alpha * float(arr[i]) + (1.0 - alpha) * out[i - 1]
-    return out
-
-def compute_rsi(closes: np.ndarray, period: int = 14) -> float:
-    if len(closes) < period + 1:
-        return 50.0
-    deltas = np.diff(closes[-(period + 1):])
-    gains = np.where(deltas > 0, deltas, 0.0)
-    losses = np.where(deltas < 0, -deltas, 0.0)
-    avg_gain = np.mean(gains)
-    avg_loss = np.mean(losses)
-    if avg_loss == 0:
-        return 100.0
-    rs = avg_gain / avg_loss
-    return float(100.0 - (100.0 / (1.0 + rs)))
-
-
-def evaluate_sovereign_confluence(symbol: str, atr_m15: float) -> tuple[float, str, float]:
-    """Recovered Sovereign Apex Additive Confluence Matrix (0 - 96.5, triggers >= 80.0)."""
-    now_utc = datetime.now(timezone.utc)
-    hhmm = now_utc.hour * 60 + now_utc.minute
-    if (21 * 60 + 50) <= hhmm <= (23 * 60 + 15):
-        return 50.0, "NEUTRAL", 50.0
-
-    rates = mt5.copy_rates_from_pos(symbol, mt5.TIMEFRAME_M5, 0, 30)
-    tick = mt5.symbol_info_tick(symbol)
-    if rates is None or len(rates) < 20 or not tick or tick.bid <= 0:
-        return 50.0, "NEUTRAL", 50.0
-
-    closes = rates["close"]
-    highs = rates["high"]
-    lows = rates["low"]
-    curr_c = float(closes[-1])
-    rsi = compute_rsi(closes, 14)
-
-    bull_pts, bear_pts = 0.0, 0.0
-
-    if rsi < 32.0:
-        bull_pts += 35.0
-    elif rsi > 68.0:
-        bear_pts += 35.0
-    elif 40.0 <= rsi <= 55.0:
-        bull_pts += 20.0
-    elif 45.0 <= rsi <= 60.0:
-        bear_pts += 20.0
-
-    if curr_c > float(np.max(highs[-10:-1])):
-        bull_pts += 25.0
-    elif curr_c < float(np.min(lows[-10:-1])):
-        bear_pts += 25.0
-
-    sp_px = float(tick.ask - tick.bid)
-    if sp_px > 0 and atr_m15 > 0 and (atr_m15 / sp_px) >= 4.0:
-        bull_pts += 15.0
-        bear_pts += 15.0
-
-    if bull_pts > bear_pts:
-        score = min(96.5, round(50.0 + (bull_pts * 0.48), 1))
-        return score, ("BUY" if score >= CONFLUENCE_GATE else "NEUTRAL"), round(rsi, 1)
-    elif bear_pts > bull_pts:
-        score = min(96.5, round(50.0 + (bear_pts * 0.48), 1))
-        return score, ("SELL" if score >= CONFLUENCE_GATE else "NEUTRAL"), round(rsi, 1)
-    return 50.0, "NEUTRAL", round(rsi, 1)
-
-
-def compute_equity_parity_lot(equity: float, symbol: str, sl_dist: float) -> float:
-    info = mt5.symbol_info(symbol)
-    if not info or sl_dist <= 0 or info.point <= 0 or info.trade_tick_size <= 0:
-        return 0.01
-    risk_cash = equity * RISK_PCT
-    ticks_at_risk = sl_dist / info.trade_tick_size
-    cash_per_lot = ticks_at_risk * info.trade_tick_value
-    if cash_per_lot <= 0:
-        return info.volume_min
-    raw_lot = risk_cash / cash_per_lot
-    step = info.volume_step or 0.01
-    norm_lot = round(raw_lot / step) * step
-    return round(max(info.volume_min, min(info.volume_max, norm_lot)), 2)
-
-
-def get_filling_mode(info) -> int:
-    if info.filling_mode & 2:
-        return mt5.ORDER_FILLING_IOC
-    if info.filling_mode & 1:
-        return mt5.ORDER_FILLING_FOK
-    return mt5.ORDER_FILLING_RETURN
 
 
 def update_heartbeat(login: int, equity: float, open_cnt: int, status: str):
@@ -195,7 +248,7 @@ def update_heartbeat(login: int, equity: float, open_cnt: int, status: str):
 
 
 def manage_t4_positions(positions, state: dict):
-    """4-Stage Sovereign Sentry: 1.0x ATR BE+2pips -> 1.2x ATR 50% Bank -> 1.5x ATR Chandelier -> 4h/8h Decay."""
+    """Exact Sovereign Sentry: 1.0x M15 ATR BE+2pips -> 1.2x ATR 50% Bank -> 1.5x ATR Chandelier -> 4h/8h Decay."""
     now_ts = int(time.time())
     banked = set(state.get("banked_tickets", []))
     choked = set(state.get("choked_tickets", []))
@@ -229,7 +282,7 @@ def manage_t4_positions(positions, state: dict):
                 res = mt5.order_send({
                     "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": p.volume,
                     "type": opp, "position": ticket, "price": curr_px, "deviation": 25,
-                    "magic": MAGIC_T4, "comment": "THETA_REAP_8H",
+                    "magic": MAGIC_SOVEREIGN, "comment": "THETA_REAP_8H",
                     "type_time": mt5.ORDER_TIME_GTC, "type_filling": get_filling_mode(info),
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
@@ -259,7 +312,7 @@ def manage_t4_positions(positions, state: dict):
                 res = mt5.order_send({
                     "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": half_vol,
                     "type": opp, "position": ticket, "price": curr_px, "deviation": 25,
-                    "magic": MAGIC_T4, "comment": f"Nexus_TP1_50pct_{ticket}",
+                    "magic": MAGIC_SOVEREIGN, "comment": f"AutoTP1 #{ticket}",
                     "type_time": mt5.ORDER_TIME_GTC, "type_filling": get_filling_mode(info),
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
@@ -280,21 +333,6 @@ def manage_t4_positions(positions, state: dict):
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                     log.info(f"[AUTO-ARMOR BE+2p] #{ticket} {sym} SL locked @ {be_sl}")
-                    # Fire 0.5x risk-free momentum pyramid add-on once core position is armored at BE
-                    same_sym_cnt = sum(1 for x in positions if x.symbol == sym)
-                    half_add = round(round((p.volume * 0.5) / (info.volume_step or 0.01)) * (info.volume_step or 0.01), 2)
-                    if same_sym_cnt == 1 and half_add >= info.volume_min:
-                        add_sl = round((curr_px - 1.2 * atr) if is_buy else (curr_px + 1.2 * atr), digits)
-                        add_tp = round((curr_px + 2.4 * atr) if is_buy else (curr_px - 2.4 * atr), digits)
-                        add_res = mt5.order_send({
-                            "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": half_add,
-                            "type": mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL,
-                            "price": curr_px, "sl": add_sl, "tp": add_tp, "deviation": 30,
-                            "magic": MAGIC_T4, "comment": "Nexus Pyramid 0.5x",
-                            "type_time": mt5.ORDER_TIME_GTC, "type_filling": get_filling_mode(info),
-                        })
-                        if add_res and add_res.retcode == mt5.TRADE_RETCODE_DONE:
-                            log.info(f"[PYRAMID 0.5x ADD-ON] #{add_res.order} {sym} {half_add}L @ {curr_px} (Core #{ticket} armored)")
                     continue
 
         if gain >= (1.5 * atr):
@@ -325,7 +363,10 @@ def run_t4_sovereign():
         mt5.login(278071462, password=r"H@ngkook3695", server="Exness-MT5Trial5")
 
     acct = mt5.account_info()
-    log.info(f"T4 SOVEREIGN APEX ONLINE | Account=#{acct.login} | Equity=${acct.equity:.2f} | Assets={WATCHLIST}")
+    log.info(
+        f"T4 SOVEREIGN NEXUS (11/04/2026 EXACT REPLICA) ONLINE | Account=#{acct.login} | "
+        f"Equity=${acct.equity:.2f} | SCAN_SYMBOLS={SCAN_SYMBOLS} | Magic={MAGIC_SOVEREIGN} | Cycle=60s"
+    )
     state = load_state()
     last_scan_ts = 0.0
 
@@ -344,55 +385,54 @@ def run_t4_sovereign():
             update_heartbeat(acct.login, acct.equity, len(positions), status_str)
 
             now_ts = time.time()
-            if (now_ts - last_scan_ts) >= 10.0 and len(positions) < MAX_SLOTS:
+            if (now_ts - last_scan_ts) >= SCAN_INTERVAL_SEC:
                 last_scan_ts = now_ts
-                for base in WATCHLIST:
+                for asset in SCAN_SYMBOLS:
+                    real_sym = get_exact_broker_symbol(asset)
+                    if not is_market_open(real_sym):
+                        continue
+                    router = resolve_router(asset, real_sym)
+                    base = router["base"]
                     if any(base in p.symbol.upper() for p in positions):
                         continue
-                    sym = resolve_symbol(base)
-                    if not sym:
-                        continue
-                    atr_m15 = compute_m15_atr(sym, 14)
-                    if atr_m15 <= 0:
-                        continue
 
-                    score, bias, rsi = evaluate_sovereign_confluence(sym, atr_m15)
-                    if score >= CONFLUENCE_GATE and bias in ("BUY", "SELL"):
-                        info = mt5.symbol_info(sym)
-                        tick = mt5.symbol_info_tick(sym)
-                        if not info or not tick:
+                    data = calculate_confluence_edge(real_sym)
+                    score = data.get("score", 0.0)
+                    bias = data.get("bias", "NEUTRAL")
+                    spot = data.get("spot", 0.0)
+                    d = router["digits"]
+
+                    if score >= CONFLUENCE_GATE and bias in ("BUY", "SELL") and spot > 0:
+                        sl = round(spot - router["sl_offset"], d) if bias == "BUY" else round(spot + router["sl_offset"], d)
+                        tp = round(spot + router["tp1_offset"], d) if bias == "BUY" else round(spot - router["tp1_offset"], d)
+                        calc = calculate_dynamic_risk_lot(float(acct.equity), real_sym, spot, sl, RISK_PCT)
+                        info = mt5.symbol_info(real_sym)
+                        if not info:
                             continue
-                        digits = info.digits
-                        sl_dist = 1.5 * atr_m15
-                        tp_dist = 3.0 * atr_m15
-                        spot = tick.ask if bias == "BUY" else tick.bid
-                        sl = round(spot - sl_dist if bias == "BUY" else spot + sl_dist, digits)
-                        tp = round(spot + tp_dist if bias == "BUY" else spot - tp_dist, digits)
-                        lot = compute_equity_parity_lot(float(acct.equity), sym, sl_dist)
 
                         req = {
                             "action": mt5.TRADE_ACTION_DEAL,
-                            "symbol": sym,
-                            "volume": lot,
+                            "symbol": real_sym,
+                            "volume": calc["lot"],
                             "type": mt5.ORDER_TYPE_BUY if bias == "BUY" else mt5.ORDER_TYPE_SELL,
                             "price": spot,
                             "sl": sl,
                             "tp": tp,
                             "deviation": 30,
-                            "magic": MAGIC_T4,
-                            "comment": "Nexus Autonomous",
+                            "magic": MAGIC_SOVEREIGN,
+                            "comment": ORDER_COMMENT,
                             "type_time": mt5.ORDER_TIME_GTC,
                             "type_filling": get_filling_mode(info),
                         }
                         res = mt5.order_send(req)
                         if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                             log.info(
-                                f"[SOVEREIGN FILL] #{res.order} {sym} {bias} {lot:.2f}L @ {spot} | "
-                                f"SL={sl} TP={tp} (1:2 R:R) | Score={score}/100 RSI={rsi}"
+                                f"[NEXUS AUTONOMOUS FILL] #{res.order} {real_sym} {bias} {calc['lot']:.2f}L @ {spot:,.{d}f} | "
+                                f"Magic={MAGIC_SOVEREIGN} | Score={score}/100 RSI={data.get('rsi')} | SL={sl:,.{d}f} TP={tp:,.{d}f}"
                             )
                             positions = list(mt5.positions_get() or [])
                         else:
-                            log.warning(f"[ORDER REJECTED] {sym} {bias}: {getattr(res, 'retcode', None)} {getattr(res, 'comment', '')}")
+                            log.warning(f"[REJECTED] {real_sym} {bias}: {getattr(res, 'retcode', None)} {getattr(res, 'comment', '')}")
 
             time.sleep(5)
         except KeyboardInterrupt:
