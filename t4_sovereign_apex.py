@@ -78,6 +78,15 @@ def compute_m15_atr(symbol: str, period: int = 14) -> float:
     return float(np.mean(tr[-period:]))
 
 
+
+def compute_ema(arr: np.ndarray, span: int) -> np.ndarray:
+    alpha = 2.0 / (span + 1.0)
+    out = np.empty_like(arr, dtype=float)
+    out[0] = float(arr[0])
+    for i in range(1, len(arr)):
+        out[i] = alpha * float(arr[i]) + (1.0 - alpha) * out[i - 1]
+    return out
+
 def compute_rsi(closes: np.ndarray, period: int = 14) -> float:
     if len(closes) < period + 1:
         return 50.0
@@ -271,6 +280,21 @@ def manage_t4_positions(positions, state: dict):
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                     log.info(f"[AUTO-ARMOR BE+2p] #{ticket} {sym} SL locked @ {be_sl}")
+                    # Fire 0.5x risk-free momentum pyramid add-on once core position is armored at BE
+                    same_sym_cnt = sum(1 for x in positions if x.symbol == sym)
+                    half_add = round(round((p.volume * 0.5) / (info.volume_step or 0.01)) * (info.volume_step or 0.01), 2)
+                    if same_sym_cnt == 1 and half_add >= info.volume_min:
+                        add_sl = round((curr_px - 1.2 * atr) if is_buy else (curr_px + 1.2 * atr), digits)
+                        add_tp = round((curr_px + 2.4 * atr) if is_buy else (curr_px - 2.4 * atr), digits)
+                        add_res = mt5.order_send({
+                            "action": mt5.TRADE_ACTION_DEAL, "symbol": sym, "volume": half_add,
+                            "type": mt5.ORDER_TYPE_BUY if is_buy else mt5.ORDER_TYPE_SELL,
+                            "price": curr_px, "sl": add_sl, "tp": add_tp, "deviation": 30,
+                            "magic": MAGIC_T4, "comment": "Nexus Pyramid 0.5x",
+                            "type_time": mt5.ORDER_TIME_GTC, "type_filling": get_filling_mode(info),
+                        })
+                        if add_res and add_res.retcode == mt5.TRADE_RETCODE_DONE:
+                            log.info(f"[PYRAMID 0.5x ADD-ON] #{add_res.order} {sym} {half_add}L @ {curr_px} (Core #{ticket} armored)")
                     continue
 
         if gain >= (1.5 * atr):
