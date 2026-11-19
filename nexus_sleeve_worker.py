@@ -658,13 +658,34 @@ def log_intent(sleeve: str, symbol: str, direction: str, volume: float, entry: f
     except Exception as e:
         logging.error(f"[{sleeve}] Intent DB error: {e}")
 
+
+def v13_smart_confluence_gate(symbol: str, atr_val: float, sp_px: float, now_utc) -> tuple[bool, float, str]:
+    """v13.0 Smart Rollover Shield + Asset-Calibrated ATR/Spread Gate + Session Liquidity Bonus."""
+    hhmm = now_utc.hour * 60 + now_utc.minute
+    # Block daily Exness rollover spread-spike window (21:50 - 23:15 UTC)
+    if (21 * 60 + 50) <= hhmm <= (23 * 60 + 15):
+        return False, 0.0, "ROLLOVER_SHIELD"
+    if sp_px <= 0 or atr_val <= 0:
+        return False, 0.0, "ZERO_FEED"
+    ratio = atr_val / sp_px
+    is_fx = any(k in symbol.upper() for k in ("GBP", "AUD", "EUR", "USDJPY", "USDCAD"))
+    min_ratio = 1.45 if is_fx else 2.50
+    if ratio < min_ratio:
+        return False, 0.0, f"LOW_ATR_SPREAD({ratio:.1f}x<{min_ratio}x)"
+    # Session & Spread-Compression Confluence Bonus (0 - 25 pts)
+    bonus = 10.0 if ratio >= (min_ratio * 1.6) else 5.0
+    if (0 <= now_utc.hour <= 4) or (7 <= now_utc.hour <= 16):  # Asia expansion + London/NY overlap
+        bonus += 15.0
+    return True, bonus, f"OK({ratio:.1f}x)"
+
+
 def run_worker(sleeve_key: str):
     cfg = SLEEVE_CONFIGS[sleeve_key]
     if not mt5.initialize(path=cfg["path"], login=cfg["login"], password=cfg["password"], server=cfg["server"], portable=False):
         logging.error(f"[{sleeve_key}] MT5 init failed on {cfg['path']}: {mt5.last_error()}")
         sys.exit(1)
 
-    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v12.1 M1/M15 + TICK-VELOCITY MICRO-SCALPER ONLINE on #{cfg['login']}")
+    logging.info(f"[{sleeve_key}] Hybrid M5 Scalper + Telegram Telemetry v13.0 INTELLIGENT CONFLUENCE + FAST-STRIKE SCALPER ONLINE on #{cfg['login']}")
     last_bar_traded = {}
     tracked_pending_tickets = {}  # order_ticket -> dict metadata
     announced_open_tickets = set()
