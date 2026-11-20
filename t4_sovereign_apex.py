@@ -248,7 +248,9 @@ def evaluate_v4_signal(symbol: str, equity: float, state: dict) -> dict | None:
 
     is_btc = ("BTC" in symbol)
     hour_utc = datetime.now(timezone.utc).hour
-    min_z = 0.85 if is_btc else 0.65
+    min_z = 1.05 if is_btc else 0.65
+    max_z = 1.50 if is_btc else 1.65
+    min_body = 0.50 if is_btc else 0.45
 
     h1_bull = ema21_h1 > ema50_h1
     h1_bear = ema21_h1 < ema50_h1
@@ -256,7 +258,7 @@ def evaluate_v4_signal(symbol: str, equity: float, state: dict) -> dict | None:
     last_exit = float(state.get("last_exit_ts", {}).get(symbol, 0.0))
     in_cooldown = (time.time() - last_exit) < COOLDOWN_SEC
     session_ok = True if is_btc else (7 <= hour_utc <= 19)
-    adx_ok = (adx_h1 >= (26.0 if is_btc else 22.0)) and (adx14 >= 23.0)
+    adx_ok = (adx_h1 >= (30.0 if is_btc else 22.0)) and (adx14 >= (26.0 if is_btc else 23.0))
 
     d = s_info.digits
     sl_dist = atr14 * 1.6
@@ -267,18 +269,18 @@ def evaluate_v4_signal(symbol: str, equity: float, state: dict) -> dict | None:
     entry = round(float(tick.bid), d)
     sl, tp = entry, entry
 
-    if (min_z <= atr_z <= 1.65) and h1_bull and curr_close > ema50_m15 and (curr_close > curr_open) and (54.0 <= rsi14 <= 69.0):
+    if (min_z <= atr_z <= max_z) and h1_bull and curr_close > ema50_m15 and (curr_close > curr_open) and (54.0 <= rsi14 <= 69.0):
         direction = "BUY"
         entry = round(float(tick.ask), d)
         sl = round(entry - sl_dist, d)
         tp = round(entry + tp_dist, d)
-        cleared = session_ok and adx_ok and (body_ratio >= 0.45) and (not in_cooldown)
-    elif (-1.65 <= atr_z <= -min_z) and h1_bear and curr_close < ema50_m15 and (curr_close < curr_open) and (31.0 <= rsi14 <= 46.0):
+        cleared = session_ok and adx_ok and (body_ratio >= min_body) and (not in_cooldown)
+    elif (-max_z <= atr_z <= -min_z) and h1_bear and curr_close < ema50_m15 and (curr_close < curr_open) and (31.0 <= rsi14 <= 46.0):
         direction = "SELL"
         entry = round(float(tick.bid), d)
         sl = round(entry + sl_dist, d)
         tp = round(entry - tp_dist, d)
-        cleared = session_ok and adx_ok and (body_ratio >= 0.45) and (not in_cooldown)
+        cleared = session_ok and adx_ok and (body_ratio >= min_body) and (not in_cooldown)
 
     edge = min(96, max(50, int(62 + abs(atr_z) * 18)))
 
