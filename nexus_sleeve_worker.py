@@ -507,7 +507,7 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
 
     # Priority 2: Sub-Minute Intra-Bar Tick-Velocity Breakout (disabled on T3 for closed-bar confirmation)
     elif (
-        sleeve_key != "T3"
+        sleeve_key not in ("T2", "T3")
         and trend_bull
         and cur_c > (swing_hi + 0.15 * m1_atr)
         and cur_c > cur_o
@@ -517,7 +517,7 @@ def evaluate_m5_setup(arg1: str, arg2=None, rates=None, sym_info=None) -> dict |
         direction, tag, score = "BUY", "M1_TICK_VELOCITY_LONG", 88.0
         gate_low, gate_high = cur_l, cur_h
     elif (
-        sleeve_key != "T3"
+        sleeve_key not in ("T2", "T3")
         and trend_bear
         and cur_c < (swing_lo - 0.15 * m1_atr)
         and cur_c < cur_o
@@ -566,11 +566,9 @@ t3_be_shielded: set[int] = set()
 
 def manage_t3_breakeven_shield(sleeve_key: str, positions: list):
     """T3 Institutional +1.0R Breakeven Shield (mirrors T4 Apex v4.1 Stage-1 protection)."""
-    if sleeve_key != "T3" or not positions:
+    if sleeve_key not in ("T2", "T3") or not positions:
         return
     for p in positions:
-        if "XAU" not in p.symbol.upper():
-            continue
         t_id = int(p.ticket)
         if t_id not in t3_init_risk_map and p.sl > 0:
             r_est = abs(float(p.price_open) - float(p.sl))
@@ -599,9 +597,9 @@ def manage_t3_breakeven_shield(sleeve_key: str, positions: list):
                 })
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
                     t3_be_shielded.add(t_id)
-                    logging.info(f"[T3-BE-SHIELD +1.0R] #{t_id} {p.symbol} SL -> {be_sl}")
+                    logging.info(f"[{sleeve_key}-BE-SHIELD +1.0R] #{t_id} {p.symbol} SL -> {be_sl}")
                     send_nexus_tg(
-                        f"??? <b>[NEXUS T3 // +1.0R BREAKEVEN SHIELD]</b>\n"
+                        f"??? <b>[NEXUS {sleeve_key} // +1.0R BREAKEVEN SHIELD]</b>\n"
                         f"? Ticket: <code>#{t_id}</code> (<b>{p.symbol}</b>)\n"
                         f"? Protected SL: <code>{be_sl}</code> | Float: <code>${p.profit:+.2f}</code>"
                     )
@@ -609,7 +607,7 @@ def manage_t3_breakeven_shield(sleeve_key: str, positions: list):
 
 def is_t3_post_stop_cooldown(sleeve_key: str, cooldown_sec: int = 1800) -> tuple[bool, int]:
     """Returns (True, remaining_sec) if T3 closed a losing trade within cooldown_sec."""
-    if sleeve_key != "T3":
+    if sleeve_key not in ("T2", "T3"):
         return False, 0
     try:
         now_ts = datetime.now(timezone.utc).timestamp()
@@ -634,7 +632,7 @@ def guard_t3_pre_rollover(sleeve_key: str, cfg: dict, positions: list):
     - If floating positive: locks SL at breakeven + 60-pt pad.
     - If underwater or stop distance <= 450 pts ($4.50): flattens cleanly at market before liquidity drops.
     """
-    if sleeve_key != "T3" or not positions:
+    if sleeve_key not in ("T2", "T3") or not positions:
         return
 
     for p in positions:
@@ -858,7 +856,7 @@ def run_worker(sleeve_key: str):
                 time.sleep(15)
                 continue
 
-            if sleeve_key == "T3" and open_count > 0:
+            if sleeve_key in ("T2", "T3") and open_count > 0:
                 manage_t3_breakeven_shield(sleeve_key, positions)
 
             # OCO Cleanup when a position is active
@@ -870,7 +868,7 @@ def run_worker(sleeve_key: str):
                 time.sleep(5)
                 continue
 
-            if sleeve_key == "T3":
+            if sleeve_key in ("T2", "T3"):
                 t3_cd, t3_rem = is_t3_post_stop_cooldown(sleeve_key, 1800)
                 if t3_cd:
                     update_heartbeat(sleeve_key, cfg["login"], equity, open_count, f"POST_STOP_COOLDOWN ({t3_rem}s)")
