@@ -1,4 +1,4 @@
-"""
+r"""
 QUANT-NEXUS TERMINAL 4 (T4) // VERIFIED T4 APEX v4 ENGINE (+139.47% 2025-2026 BACKTEST) + TELEGRAM SENTINEL
 - Account: Exness-MT5Trial5 #278071462 (C:\MT5_Sovereign_T4\terminal64.exe)
 - Bot: @GODMODEAI2050_bot -> Chat ID 5279761713
@@ -35,6 +35,7 @@ SCAN_INTERVAL_SEC = 15.0
 MAGIC_NEXUS = 999888
 ORDER_COMMENT = "Nexus Autonomous"
 DAILY_MAX_LOSS_PCT = 0.025
+MAX_OPEN_RISK_PCT = 0.022  # Hard 2.2% cap on aggregate concurrent open SL risk
 
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 logging.basicConfig(
@@ -207,6 +208,7 @@ def execute_market_order(symbol: str, direction: str, lot: float, sl: float, tp:
                     return True, f"Ticket #{alt_res.order}", alt_res.order
         return False, f"retcode={res.retcode} ({res.comment})", 0
 
+    log_t4_execution("OPEN", int(res.order), symbol, direction.upper(), float(lot), float(res.price or price), float(sl), float(tp), 0.0, ORDER_COMMENT)
     return True, f"Ticket #{res.order}", res.order
 
 
@@ -223,20 +225,23 @@ def evaluate_v4_signal(symbol: str, equity: float, state: dict) -> dict | None:
     if r15 is None or rh1 is None or len(r15) < 70 or len(rh1) < 60:
         return None
 
-    c15 = r15["close"].astype(np.float64)
-    ch1 = rh1["close"].astype(np.float64)
+    # Use confirmed closed bars ([:-1]) for M15/H1 indicators so intra-bar wicks cannot trigger false entries
+    r15_closed = r15[:-1]
+    rh1_closed = rh1[:-1]
+    c15 = r15_closed["close"].astype(np.float64)
+    ch1 = rh1_closed["close"].astype(np.float64)
 
     ema21_h1 = calc_ema(ch1, 21)[-1]
     ema50_h1 = calc_ema(ch1, 50)[-1]
-    _, adx_h1 = calc_atr_adx(rh1, 14)
+    _, adx_h1 = calc_atr_adx(rh1_closed, 14)
 
-    atr14, adx14 = calc_atr_adx(r15, 14)
+    atr14, adx14 = calc_atr_adx(r15_closed, 14)
     rsi14 = calc_rsi(c15, 14)
     ema50_m15 = calc_ema(c15, 50)[-1]
 
     ma10 = float(np.mean(c15[-10:]))
     curr_close = float(c15[-1])
-    curr_open = float(r15["open"][-1])
+    curr_open = float(r15_closed["open"][-1])
 
     atr_z = (curr_close - ma10) / atr14 if atr14 > 0 else 0.0
     body_ratio = abs(curr_close - curr_open) / atr14 if atr14 > 0 else 0.0
@@ -277,7 +282,12 @@ def evaluate_v4_signal(symbol: str, equity: float, state: dict) -> dict | None:
 
     edge = min(96, max(50, int(62 + abs(atr_z) * 18)))
 
-    # Strict 0.75% ATR-normalized equity risk sizing
+    # Spread-to-SL guard: reject entries if live spread exceeds 14% of stop distance
+    live_spread = abs(float(tick.ask) - float(tick.bid))
+    spread_ok = (sl_dist > 0) and ((live_spread / sl_dist) <= 0.14)
+    cleared = bool(cleared and spread_ok)
+
+    # Strict 0.75% ATR-normalized equity risk sizing + actual dollar risk audit
     risk_usd = equity * RISK_PCT
     tick_size = s_info.trade_tick_size or s_info.point
     tick_val = s_info.trade_tick_value or 1.0
@@ -285,6 +295,7 @@ def evaluate_v4_signal(symbol: str, equity: float, state: dict) -> dict | None:
     step = s_info.volume_step or 0.01
     raw_lot = int((risk_usd / loss_per_lot) / step) * step if loss_per_lot > 0 else s_info.volume_min
     lots = round(max(s_info.volume_min, min(s_info.volume_max, raw_lot)), 2)
+    actual_risk_usd = round(loss_per_lot * lots, 2)
 
     return {
         "symbol": symbol,
@@ -294,6 +305,7 @@ def evaluate_v4_signal(symbol: str, equity: float, state: dict) -> dict | None:
         "adx14": round(adx14, 1),
         "rsi14": round(rsi14, 1),
         "calculated_lots": lots,
+        "actual_risk_usd": actual_risk_usd,
         "cleared": cleared,
         "price": entry,
         "sl": sl,
@@ -341,29 +353,44 @@ def manage_tiered_ratchet(state: dict):
             if (is_buy and trail_sl > p.sl) or (not is_buy and trail_sl < p.sl):
                 res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": trail_sl, "tp": p.tp})
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    log.info(f"[RATCHET S2 TRAIL] #{p.ticket} {p.symbol} SL -> {trail_sl}")
-                    if stage < 2:
-                        stages[t_key] = 2
+                    log.info(f"[RATCHET S3 TRAIL] #{p.ticket} {p.symbol} SL -> {trail_sl}")
+                    if stage < 3:
+                        stages[t_key] = 3
                         dirty = True
-                        send_tg_message(
-                            f"? <b>T4 APEX v4 // STAGE-2 TRAILING ACTIVE</b>\n"
+                        log_t4_execution("CLOSE", int(t), str(d.symbol), "EXIT", float(d.volume), float(d.price), float(d.profit), float(d.swap + d.commission), float(net_pnl), badge)
+                send_tg_message(
+                            f"?? <b>T4 APEX v4.1 // STAGE-3 TRAILING ACTIVE</b>\n"
                             "??????????????????????????\n"
                             f"? <b>Ticket:</b> <code>#{p.ticket}</code> (<b>{p.symbol}</b>)\n"
                             f"? <b>Trailing SL:</b> <code>{trail_sl}</code> | <b>Float:</b> <code>${p.profit:+.2f}</code>"
                         )
-        elif gain >= (r_dist * 1.5) and stage < 1:
+        elif gain >= (r_dist * 1.5) and stage < 2:
             lock_sl = round((entry + r_dist * 0.5) if is_buy else (entry - r_dist * 0.5), digits)
             if (is_buy and lock_sl > p.sl) or (not is_buy and lock_sl < p.sl):
                 res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": lock_sl, "tp": p.tp})
                 if res and res.retcode == mt5.TRADE_RETCODE_DONE:
-                    stages[t_key] = 1
+                    stages[t_key] = 2
                     dirty = True
-                    log.info(f"[RATCHET S1 +0.5R] #{p.ticket} {p.symbol} SL -> {lock_sl}")
+                    log.info(f"[RATCHET S2 +0.5R] #{p.ticket} {p.symbol} SL -> {lock_sl}")
                     send_tg_message(
-                        "??? <b>T4 APEX v4 // +0.5R PROFIT LOCKED</b>\n"
+                        "?? <b>T4 APEX v4.1 // +0.5R PROFIT LOCKED</b>\n"
                         "??????????????????????????\n"
                         f"? <b>Ticket:</b> <code>#{p.ticket}</code> (<b>{p.symbol}</b>)\n"
                         f"? <b>Locked SL:</b> <code>{lock_sl}</code> | <b>Float:</b> <code>${p.profit:+.2f}</code>"
+                    )
+        elif gain >= (r_dist * 1.0) and stage < 1:
+            be_sl = round((entry + r_dist * 0.08) if is_buy else (entry - r_dist * 0.08), digits)
+            if (is_buy and be_sl > p.sl) or (not is_buy and be_sl < p.sl):
+                res = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP, "position": p.ticket, "symbol": p.symbol, "sl": be_sl, "tp": p.tp})
+                if res and res.retcode == mt5.TRADE_RETCODE_DONE:
+                    stages[t_key] = 1
+                    dirty = True
+                    log.info(f"[RATCHET S1 +1.0R BE-SHIELD] #{p.ticket} {p.symbol} SL -> {be_sl}")
+                    send_tg_message(
+                        "??? <b>T4 APEX v4.1 // +1.0R BREAKEVEN SHIELD</b>\n"
+                        "??????????????????????????\n"
+                        f"? <b>Ticket:</b> <code>#{p.ticket}</code> (<b>{p.symbol}</b>)\n"
+                        f"? <b>Protected SL:</b> <code>{be_sl}</code> | <b>Float:</b> <code>${p.profit:+.2f}</code>"
                     )
 
     if dirty:
@@ -459,6 +486,58 @@ def poll_tg_commands(scans: list, state: dict):
         pass
 
 
+
+def log_t4_execution(event_type: str, ticket: int, symbol: str, direction: str, volume: float, price: float, sl: float, tp: float, pnl: float = 0.0, note: str = ""):
+    try:
+        conn = sqlite3.connect(LEDGER_DB, timeout=5.0)
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS executions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_utc TEXT,
+                sleeve TEXT,
+                account_id INTEGER,
+                ticket INTEGER,
+                symbol TEXT,
+                direction TEXT,
+                order_mode TEXT,
+                volume REAL,
+                signal_price REAL,
+                filled_price REAL,
+                slippage_pts REAL,
+                latency_ms REAL,
+                sl REAL,
+                tp REAL,
+                confidence REAL,
+                vpin REAL,
+                dii REAL,
+                kelly_fraction REAL,
+                status TEXT,
+                strategy TEXT
+            )
+            """
+        )
+        now_iso = datetime.now(timezone.utc).isoformat()
+        status_val = f"{event_type}:{note}" if note else event_type
+        conn.execute(
+            """
+            INSERT INTO executions (
+                ts_utc, sleeve, account_id, ticket, symbol, direction, order_mode,
+                volume, signal_price, filled_price, sl, tp, confidence, status, strategy
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                now_iso, "T4", 278071462, int(ticket), str(symbol), str(direction), "MARKET",
+                float(volume), float(price), float(price), float(sl), float(tp),
+                float(pnl), status_val, "T4_APEX_V4_1"
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as exc:
+        log.warning(f"[LEDGER-LOG] Failed for #{ticket}: {exc}")
+
+
 def update_heartbeat(login: int, equity: float, open_cnt: int, status: str):
     if not os.path.exists(LEDGER_DB):
         return
@@ -539,6 +618,20 @@ def run_t4_apex_v4():
                     if mt5.positions_get(symbol=sym):
                         continue
                     if candidate.get("cleared"):
+                        # Compute live unshielded dollar risk on existing open positions
+                        open_risk_usd = 0.0
+                        for op in (mt5.positions_get() or []):
+                            si = mt5.symbol_info(op.symbol)
+                            if si and op.sl > 0:
+                                ts = si.trade_tick_size or si.point
+                                tv = si.trade_tick_value or 1.0
+                                sl_gap = (op.price_open - op.sl) if op.type == 0 else (op.sl - op.price_open)
+                                if sl_gap > 0 and ts > 0:
+                                    open_risk_usd += (sl_gap / ts) * tv * op.volume
+                        cand_risk = float(candidate.get("actual_risk_usd", 0.0))
+                        if (open_risk_usd + cand_risk) > (float(acct.equity) * MAX_OPEN_RISK_PCT):
+                            log.info(f"[RISK-HEAT-BLOCK] {sym} skipped: OpenRisk=${open_risk_usd:.2f} + New=${cand_risk:.2f} > 2.2% cap")
+                            continue
                         lots = candidate["calculated_lots"]
                         sl = candidate["sl"]
                         tp = candidate["tp"]

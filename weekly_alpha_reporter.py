@@ -24,10 +24,10 @@ GODMODE_CHAT_ID = "5279761713"
 DAYS_LOOKBACK = 7
 
 TERMINAL_CONFIG = [
-    {"id": "T1_QUANT_278061453", "path": r"C:\MT5_Quant_278061453\terminal64.exe", "portable": False},
-    {"id": "T2_HFT_278041671", "path": r"C:\MT5_HFT_278041671\terminal64.exe", "portable": False},
-    {"id": "T3_PENDING_278041169", "path": r"C:\MT5_Pending_278041169\terminal64.exe", "portable": False},
-    {"id": "T4_SOVEREIGN_278071462", "path": r"C:\MT5_Sovereign_T4\terminal64.exe", "portable": True},
+    {"id": "T1_BTC_278062038", "path": r"C:\Program Files\MetaTrader 5 - Apex Satellite\terminal64.exe", "portable": False},
+    {"id": "T2_FX_278062039", "path": r"C:\MT5_Pending_278041169\terminal64.exe", "portable": False},
+    {"id": "T3_XAU_278062042", "path": r"C:\MT5_HFT_278041671\terminal64.exe", "portable": False},
+    {"id": "T4_APEX_278071462", "path": r"C:\MT5_Sovereign_T4\terminal64.exe", "portable": True},
 ]
 
 

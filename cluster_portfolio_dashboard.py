@@ -26,25 +26,25 @@ GODMODE_CHAT_ID = "5279761713"
 
 TERMINAL_CONFIG = [
     {
-        "id": "TERM_QUANT_278061453",
+        "id": "T1_BTC_278062038",
         "sleeve": "T1",
-        "path": "C:/MT5_Quant_278061453/terminal64.exe",
+        "path": "C:/Program Files/MetaTrader 5 - Apex Satellite/terminal64.exe",
         "portable": False,
     },
     {
-        "id": "TERM_HFT_278041671",
+        "id": "T2_FX_278062039",
         "sleeve": "T2",
-        "path": "C:/MT5_HFT_278041671/terminal64.exe",
-        "portable": False,
-    },
-    {
-        "id": "TERM_PENDING_278041169",
-        "sleeve": "T3",
         "path": "C:/MT5_Pending_278041169/terminal64.exe",
         "portable": False,
     },
     {
-        "id": "TERM_SOVEREIGN_278071462",
+        "id": "T3_XAU_278062042",
+        "sleeve": "T3",
+        "path": "C:/MT5_HFT_278041671/terminal64.exe",
+        "portable": False,
+    },
+    {
+        "id": "T4_APEX_278071462",
         "sleeve": "T4",
         "path": "C:/MT5_Sovereign_T4/terminal64.exe",
         "portable": True,
