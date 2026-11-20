@@ -1,0 +1,42 @@
+{
+  "T0_CURRENT_BASELINE": {
+    "tier": "T0_CURRENT_BASELINE",
+    "trades": 563,
+    "win_rate_pct": 42.1,
+    "profit_factor": 0.85,
+    "avg_r": -0.102,
+    "max_dd_pct": 33.09,
+    "final_equity": 719.74,
+    "return_pct": -28.03
+  },
+  "T1_STRICT_ADX": {
+    "tier": "T1_STRICT_ADX",
+    "trades": 294,
+    "win_rate_pct": 38.8,
+    "profit_factor": 0.76,
+    "avg_r": -0.168,
+    "max_dd_pct": 28.59,
+    "final_equity": 756.72,
+    "return_pct": -24.33
+  },
+  "T2_STRICT_ATR_Z": {
+    "tier": "T2_STRICT_ATR_Z",
+    "trades": 204,
+    "win_rate_pct": 46.1,
+    "profit_factor": 1.04,
+    "avg_r": 0.002,
+    "max_dd_pct": 7.85,
+    "final_equity": 1027.87,
+    "return_pct": 2.79
+  },
+  "T3_HIGH_CONVICTION": {
+    "tier": "T3_HIGH_CONVICTION",
+    "trades": 76,
+    "win_rate_pct": 44.7,
+    "profit_factor": 1.04,
+    "avg_r": -0.044,
+    "max_dd_pct": 5.49,
+    "final_equity": 1010.06,
+    "return_pct": 1.01
+  }
+}

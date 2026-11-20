@@ -1,0 +1,38 @@
+{
+  "T4_APEX_v41_XAUUSD": {
+    "bars": 44668,
+    "start_utc": "2025-01-01",
+    "end_utc": "2026-11-20",
+    "trades": 978,
+    "win_rate_pct": 52.1,
+    "profit_factor": 0.84,
+    "avg_r": -0.08,
+    "max_dd_pct": 66.21,
+    "final_equity": 360.81,
+    "return_pct": -63.92
+  },
+  "T4_APEX_v41_EURUSD": {
+    "bars": 46995,
+    "start_utc": "2025-01-01",
+    "end_utc": "2026-11-20",
+    "trades": 2337,
+    "win_rate_pct": 48.7,
+    "profit_factor": 0.71,
+    "avg_r": -0.14,
+    "max_dd_pct": 90.96,
+    "final_equity": 107.15,
+    "return_pct": -89.29
+  },
+  "T4_APEX_v41_BTCUSD": {
+    "bars": 66095,
+    "start_utc": "2025-01-01",
+    "end_utc": "2026-11-20",
+    "trades": 1332,
+    "win_rate_pct": 50.6,
+    "profit_factor": 0.73,
+    "avg_r": -0.14,
+    "max_dd_pct": 93.0,
+    "final_equity": 86.55,
+    "return_pct": -91.34
+  }
+}

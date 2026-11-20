@@ -1,10 +1,10 @@
 {
-  "circuit_breaker_tripped": true,
-  "daily_loss_pct": 4.25,
+  "circuit_breaker_tripped": false,
+  "daily_loss_pct": 0.0,
   "peak_balance": 3102.93,
   "current_balance": 3102.93,
   "drawdown_threshold": 5.0,
   "consecutive_losses": 0,
-  "active_circuit_reason": "SIMULATED_MAX_DRAWDOWN_BREACH_TEST",
-  "last_updated_utc": "2026-11-18T07:48:31.556721+00:00"
+  "active_circuit_reason": null,
+  "last_updated_utc": "2026-11-20T13:51:09.622506+00:00"
 }

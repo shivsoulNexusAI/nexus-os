@@ -1,0 +1,32 @@
+{
+  "XAUUSD": {
+    "trades": 944,
+    "be_saves": 415,
+    "win_rate_pct": 53.7,
+    "profit_factor": 0.87,
+    "avg_r": -0.067,
+    "max_dd_pct": 57.85,
+    "final_equity": 438.03,
+    "return_pct": -56.2
+  },
+  "EURUSD": {
+    "trades": 1266,
+    "be_saves": 514,
+    "win_rate_pct": 50.7,
+    "profit_factor": 0.76,
+    "avg_r": -0.106,
+    "max_dd_pct": 62.23,
+    "final_equity": 393.17,
+    "return_pct": -60.68
+  },
+  "BTCUSD": {
+    "trades": 1225,
+    "be_saves": 523,
+    "win_rate_pct": 48.9,
+    "profit_factor": 0.66,
+    "avg_r": -0.183,
+    "max_dd_pct": 91.05,
+    "final_equity": 89.63,
+    "return_pct": -91.04
+  }
+}

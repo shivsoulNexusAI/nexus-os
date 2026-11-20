@@ -1,0 +1,31 @@
+{
+  "portfolio": {
+    "start_equity": 1000.0,
+    "final_equity": 1496.42,
+    "return_pct": 49.64,
+    "max_dd_pct": 19.77,
+    "total_trades": 936,
+    "win_rate_pct": 45.3,
+    "profit_factor": 1.11
+  },
+  "by_symbol": {
+    "XAUUSD": {
+      "trades": 344,
+      "win_rate_pct": 44.8,
+      "avg_r": 0.071,
+      "net_pnl_usd": 303.07
+    },
+    "EURUSD": {
+      "trades": 397,
+      "win_rate_pct": 44.8,
+      "avg_r": 0.051,
+      "net_pnl_usd": 126.12
+    },
+    "BTCUSD": {
+      "trades": 195,
+      "win_rate_pct": 47.2,
+      "avg_r": 0.024,
+      "net_pnl_usd": 67.24
+    }
+  }
+}
